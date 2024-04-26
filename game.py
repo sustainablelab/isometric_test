@@ -6,6 +6,7 @@
 import sys
 import atexit
 from pathlib import Path
+from dataclasses import dataclass
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"          # Set pygame env var to hide "Hello" msg
 import pygame
@@ -41,7 +42,17 @@ def define_colors() -> dict:
     colors = {}
     colors['color_debug_hud'] = Color(255,255,255,255)
     colors['color_game_art_bgnd'] = Color(40,40,40,255)
+    colors['color_grid_lines'] = Color(100,100,200,255)
     return colors
+
+@dataclass
+class LineSeg:
+    start:tuple
+    end:tuple
+
+    @property
+    def vector(self) -> tuple:
+        return (self.end[0] - self.start[0], self.end[1] - self.start[1])
 
 class Game:
     def __init__(self):
@@ -59,6 +70,9 @@ class Game:
 
         self.debugHud = None                            # HUD created in game_loop()
 
+        # Game Data
+        self.grid = Grid(self, N=10)
+
         # FPS
         self.clock = pygame.time.Clock()
 
@@ -68,7 +82,6 @@ class Game:
     def game_loop(self):
         # Create the debug HUD
         self.debugHud = DebugHud(self)
-        self.debugHud.add_text("BOB")
 
         # Handle keyboard and mouse
         self.handle_ui_events()
@@ -76,6 +89,14 @@ class Game:
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
         self.surfs['surf_game_art'].fill(self.colors['color_game_art_bgnd'])
+
+        # Draw grid
+        self.grid.draw(self.surfs['surf_game_art'])
+
+        # Display mouse coordinates in game grid coordinate system
+        mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
+        mpos_g = self.grid.xfm_pg(mpos_p)
+        self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
 
         # Copy game art to OS window
         ### blit(source, dest, area=None, special_flags=0) -> Rect
@@ -149,6 +170,94 @@ class Game:
                 #       'A' prints "a"        '1' prints "1"
                 # 'Shift+A' prints "A"  'Shift+1' prints "!"
                 logger.debug(f"{event.unicode}")
+
+class Grid:
+    """Define a grid of lines.
+
+    :param N:int -- number of horizontal grid lines and number of vertical grid lines
+    """
+    def __init__(self, game:Game, N:int):
+        self.game = game                                # The Game
+        self.N = N                                      # Number of grid lines
+
+        # Define a 2x3 transform matrix [a,b,e;c,d,f] to go from g (game grid) to p (pixels)
+        # self.xfm = {'a':20,'b':0,'c':0,'d':-20,'e':200,'f':300}
+        # TODO: Why is the mouse grid coordinate wrong when I skew the grid?
+        self.xfm = {'a':20,'b':5,'c':0,'d':-10,'e':200,'f':300}
+
+    @property
+    def det(self) -> float:
+        a=self.xfm['a']
+        b=self.xfm['b']
+        c=self.xfm['c']
+        d=self.xfm['d']
+        return a*d-b*c
+
+    @property
+    def hlinesegs(self) -> list:
+        """Return list of horizontal line segments."""
+        a = 0                                           # Bottom/Left of grid
+        b = self.N                                      # Top/Right of grid
+        cs = list(range(a,b+1))
+        hls = []
+        for c in cs:
+            hls.append (LineSeg(start=(a,c),end=(b,c)))
+        return hls
+
+    @property
+    def vlinesegs(self) -> list:
+        """Return list of vertical line segments."""
+        a = 0                                           # Bottom/Left of grid
+        b = self.N                                      # Top/Right of grid
+        cs = list(range(a,b+1))                         # Intermediate points
+        vls = []
+        for c in cs:
+            vls.append (LineSeg(start=(c,a),end=(c,b)))
+        return vls
+
+    def xfm_gp(self, point:tuple) -> tuple:
+        """Transform point from game grid coordinates to OS Window pixel coordinates."""
+        # Define 2x2 transform
+        a=self.xfm['a']
+        b=self.xfm['b']
+        c=self.xfm['c']
+        d=self.xfm['d']
+        # Define offset vector (in pixel coordinates)
+        e=self.xfm['e']
+        f=self.xfm['f']
+        return (a*point[0] + b*point[1] + e, c*point[0] + d*point[1] + f)
+
+    def xfm_pg(self, point:tuple) -> tuple:
+        """Transform point from OS Window pixel coordinates to game grid coordinates."""
+        # Define 2x2 transform
+        a=self.xfm['d']
+        b=self.xfm['b']
+        c=self.xfm['c']
+        d=self.xfm['d']
+        # Define offset vector (in pixel coordinates)
+        e=self.xfm['e']
+        f=self.xfm['f']
+        # Calculate the determinant of the 2x2
+        det = self.det
+        g = ((   d/det)*point[0] + (-1*b/det)*point[1] + (b*f-d*e)/det,
+             (-1*c/det)*point[0] + (   a/det)*point[1] + (c*e-a*f)/det)
+        # Define precision
+        p = 0
+        if p==0:
+            return (int(round(g[0])), int(round(g[1])))
+        else:
+            return (round(g[0],p), round(g[1],p))
+
+    def draw(self, surf:pygame.Surface) -> None:
+        linesegs = self.hlinesegs + self.vlinesegs
+        for grid_line in linesegs:
+            ### line(surface, color, start_pos, end_pos, width=1) -> Rect
+            pygame.draw.line(
+                    surf,
+                    self.game.colors['color_grid_lines'],
+                    self.xfm_gp(grid_line.start),
+                    self.xfm_gp(grid_line.end)
+                    )
 
 if __name__ == '__main__':
     atexit.register(shutdown)                           # Safe shutdown
