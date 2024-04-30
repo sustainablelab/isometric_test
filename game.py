@@ -107,9 +107,9 @@ class Game:
         self.debugHud = DebugHud(self)
 
         # Handle keyboard and mouse
-        # TODO: zoom and pan using the mouse
+        # Zoom by scrolling the mouse wheel
+        # TODO: pan by pressing the mouse wheel or left-clicking
         self.handle_ui_events()
-
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
@@ -161,6 +161,27 @@ class Game:
                 case pygame.WINDOWRESIZED: self.os_window.handle_WINDOWRESIZED(event)
                 case pygame.KEYDOWN: self.handle_keydown(event)
                 case pygame.KEYUP: self.handle_keyup(event)
+                case pygame.MOUSEWHEEL:
+                    # logger.debug(event)
+                    ### {'flipped': False, 'x': 0, 'y': 1, 'precise_x': 0.0, 'precise_y': 1.0, 'touch': False, 'window': None}
+                    match event.y:
+                        case 1: self.grid.zoom_in()
+                        case -1: self.grid.zoom_out()
+                        case _: pass
+                case pygame.MOUSEBUTTONDOWN:
+                    ### L-click: {'pos': (328, 320), 'button': 1, 'touch': False, 'window': None}
+                    ### M-click: {'pos': (328, 320), 'button': 2, 'touch': False, 'window': None}
+                    ### R-click: {'pos': (329, 320), 'button': 3, 'touch': False, 'window': None}
+                    match event.button:
+                        case 1: logger.debug("Left-click")
+                        case 2: logger.debug("Middle-click")
+                        case 3: logger.debug("Right-click")
+                        case 4: logger.debug("Mousewheel y=+1")
+                        case 5: logger.debug("Mousewheel y=-1")
+                        case 6: logger.debug("Logitech G602 Thumb button 6")
+                        case 7: logger.debug("Logitech G602 Thumb button 7")
+                        case _: logger.debug(event)
+
                 # Log any other events
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
@@ -467,7 +488,7 @@ class Grid:
                 pygame.draw.line( surf, color,
                         self.xfm_gp(grid_line.start),
                         self.xfm_gp(grid_line.end),
-                        width=1
+                        width=2
                         )
             ### Anti-aliased:
             ### aaline(surface, color, start_pos, end_pos, blend=1) -> Rect
