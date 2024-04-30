@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # vim: set fileencoding=utf-8 :
 """Test isometric grid math.
+[x] Implement the xfms AApg and AAgp
+[ ] Draw a marker at (0,0) and (N,N) to make sure the xfms are correct
+[ ] Draw a rectangular prism to represent the player character
+[ ] Implement keyboard movement of player character
 """
 
 import sys
@@ -38,11 +42,29 @@ def define_surfaces(os_window:OsWindow) -> dict:
 
     return surfs
 
+def define_keys() -> dict:
+    keys = {}
+    keys['key_A'] = False
+    keys['key_a'] = False
+    keys['key_B'] = False
+    keys['key_b'] = False
+    keys['key_C'] = False
+    keys['key_c'] = False
+    keys['key_D'] = False
+    keys['key_d'] = False
+    keys['key_E'] = False
+    keys['key_e'] = False
+    keys['key_F'] = False
+    keys['key_f'] = False
+    return keys
+
 def define_colors() -> dict:
     colors = {}
     colors['color_debug_hud'] = Color(255,255,255,255)
     colors['color_game_art_bgnd'] = Color(40,40,40,255)
-    colors['color_grid_lines'] = Color(100,100,200,255)
+    colors['color_grid_lines'] = Color(100,100,250,255)
+    colors['color_grid_x_axis'] = Color(100,150,200,255)
+    colors['color_grid_y_axis'] = Color(200,100,200,255)
     return colors
 
 @dataclass
@@ -67,11 +89,12 @@ class Game:
 
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces
         self.colors = define_colors()                   # Dict of Pygame Colors
+        self.keys = define_keys()                       # Dict of keyboard inputs
 
         self.debugHud = None                            # HUD created in game_loop()
 
         # Game Data
-        self.grid = Grid(self, N=10)
+        self.grid = Grid(self, N=50)
 
         # FPS
         self.clock = pygame.time.Clock()
@@ -84,7 +107,9 @@ class Game:
         self.debugHud = DebugHud(self)
 
         # Handle keyboard and mouse
+        # TODO: zoom and pan using the mouse
         self.handle_ui_events()
+
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
@@ -97,6 +122,9 @@ class Game:
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
         mpos_g = self.grid.xfm_pg(mpos_p)
         self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
+
+        # Display transform matrix element values a,b,c,d,e,f
+        self.debugHud.add_text(f"a: {self.grid.a:0.1f} | b: {self.grid.b:0.1f} | c: {self.grid.c:0.1f} | d: {self.grid.d:0.1f} | e: {self.grid.e:0.1f} | f: {self.grid.f:0.1f}")
 
         # Copy game art to OS window
         ### blit(source, dest, area=None, special_flags=0) -> Rect
@@ -127,15 +155,66 @@ class Game:
                 case pygame.WINDOWSHOWN: pass
                 case pygame.WINDOWFOCUSGAINED: pass
                 case pygame.WINDOWTAKEFOCUS: pass
-                case pygame.KEYUP: pass
                 case pygame.TEXTINPUT: pass
                 # Handle these events
                 case pygame.QUIT: sys.exit()
                 case pygame.WINDOWRESIZED: self.os_window.handle_WINDOWRESIZED(event)
                 case pygame.KEYDOWN: self.handle_keydown(event)
+                case pygame.KEYUP: self.handle_keyup(event)
                 # Log any other events
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
+        # Update transform based on key presses
+        U = 20; L = -20                                 # Upper/Lower bounds
+        if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
+        if self.keys['key_B']: self.grid.b = min(U, self.grid.b+1)
+        if self.keys['key_C']: self.grid.c = min(U, self.grid.c+1)
+        if self.keys['key_D']: self.grid.d = min(U, self.grid.d+1)
+        if self.keys['key_a']: self.grid.a = max(L, self.grid.a-1)
+        if self.keys['key_b']: self.grid.b = max(L, self.grid.b-1)
+        if self.keys['key_c']: self.grid.c = max(L, self.grid.c-1)
+        if self.keys['key_d']: self.grid.d = max(L, self.grid.d-1)
+        if self.keys['key_E']: self.grid.e += 1
+        if self.keys['key_e']: self.grid.e -= 1
+        if self.keys['key_F']: self.grid.f += 1
+        if self.keys['key_f']: self.grid.f -= 1
+
+    def handle_keyup(self, event) -> None:
+        kmod = pygame.key.get_mods()
+        match event.key:
+            case pygame.K_LSHIFT:
+                if self.keys['key_A']:
+                    self.keys['key_A'] = False
+                if self.keys['key_B']:
+                    self.keys['key_B'] = False
+                if self.keys['key_C']:
+                    self.keys['key_C'] = False
+                if self.keys['key_D']:
+                    self.keys['key_D'] = False
+                if self.keys['key_E']:
+                    self.keys['key_E'] = False
+                if self.keys['key_F']:
+                    self.keys['key_F'] = False
+            case pygame.K_a:
+                self.keys['key_A'] = False
+                self.keys['key_a'] = False
+            case pygame.K_b:
+                self.keys['key_B'] = False
+                self.keys['key_b'] = False
+            case pygame.K_c:
+                self.keys['key_C'] = False
+                self.keys['key_c'] = False
+            case pygame.K_d:
+                self.keys['key_D'] = False
+                self.keys['key_d'] = False
+            case pygame.K_e:
+                self.keys['key_E'] = False
+                self.keys['key_e'] = False
+            case pygame.K_f:
+                self.keys['key_F'] = False
+                self.keys['key_f'] = False
+            case _:
+                pass
 
     def handle_keydown(self, event) -> None:
         kmod = pygame.key.get_mods()                    # Which modifier keys are held
@@ -165,6 +244,44 @@ class Game:
             case pygame.K_RALT: logger.debug("Right Alt")
             case pygame.K_LCTRL: logger.debug("Left Ctrl")
             case pygame.K_RCTRL: logger.debug("Right Ctrl")
+            # TEMPORARY manipulate the xfm matrix
+            case pygame.K_a:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_A'] = True
+                else:
+                    self.keys['key_a'] = True
+            case pygame.K_b:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_B'] = True
+                else:
+                    self.keys['key_b'] = True
+            case pygame.K_c:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_C'] = True
+                else:
+                    self.keys['key_c'] = True
+            case pygame.K_d:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_D'] = True
+                else:
+                    self.keys['key_d'] = True
+            case pygame.K_e:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_E'] = True
+                else:
+                    self.keys['key_e'] = True
+            case pygame.K_f:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_F'] = True
+                else:
+                    self.keys['key_f'] = True
+            case pygame.K_r:
+                self.grid.reset()
+            case pygame.K_z:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.grid.zoom_in()
+                else:
+                    self.grid.zoom_out()
             case _:
                 # Print unicode for the pressed key or key combo:
                 #       'A' prints "a"        '1' prints "1"
@@ -179,25 +296,98 @@ class Grid:
     def __init__(self, game:Game, N:int):
         self.game = game                                # The Game
         self.N = N                                      # Number of grid lines
+        self.reset()
 
+    def reset(self) -> None:
         # Define a 2x3 transform matrix [a,b,e;c,d,f] to go from g (game grid) to p (pixels)
+        ### Grid view is top-down (no skew: b=0, c=0)
         # self.xfm = {'a':20,'b':0,'c':0,'d':-20,'e':200,'f':300}
-        # TODO: Why is the mouse grid coordinate wrong when I skew the grid?
-        self.xfm = {'a':20,'b':5,'c':0,'d':-10,'e':200,'f':300}
+        # Grid view is skewed
+        # self.xfm = {'a':20,'b':5,'c':0,'d':-10,'e':200,'f':300}
+
+        # # Define 2x2 transform
+        # self._a = 20
+        # self._b = 5
+        # self._c = 5
+        # self._d = -5
+        # # Define offset vector (in pixel coordinates)
+        # self._e = 10
+        # self._f = 300
+
+        # Define 2x2 transform
+        self._a = 8
+        self._b = 7
+        self._c = 3
+        self._d = -5
+        # Define offset vector (in pixel coordinates)
+        # Place origin at center of game art
+        ctr = (int(self.game.os_window.size[0]/2),
+               int(self.game.os_window.size[1]/2))
+        self._e = ctr[0]
+        self._f = ctr[1]
+
+    @property
+    def a(self) -> float:
+        return self._a
+    @a.setter
+    def a(self, value) -> float:
+        self._a = value
+
+    @property
+    def b(self) -> float:
+        return self._b
+    @b.setter
+    def b(self, value) -> float:
+        self._b = value
+
+    @property
+    def c(self) -> float:
+        return self._c
+    @c.setter
+    def c(self, value) -> float:
+        self._c = value
+
+    @property
+    def d(self) -> float:
+        return self._d
+    @d.setter
+    def d(self, value) -> float:
+        self._d = value
+
+    @property
+    def e(self) -> float:
+        return self._e
+    @e.setter
+    def e(self, value) -> float:
+        self._e = value
+
+    @property
+    def f(self) -> float:
+        return self._f
+    @f.setter
+    def f(self, value) -> float:
+        self._f = value
+
 
     @property
     def det(self) -> float:
-        a=self.xfm['a']
-        b=self.xfm['b']
-        c=self.xfm['c']
-        d=self.xfm['d']
-        return a*d-b*c
+        a,b,c,d = (self._a, self._b, self._c, self._d)
+        det = a*d-b*c
+        if det == 0:
+            # If det=0, Ainv will have div by 0, so just make det very small.
+            return 0.0001
+        else:
+            return a*d-b*c
 
     @property
     def hlinesegs(self) -> list:
         """Return list of horizontal line segments."""
-        a = 0                                           # Bottom/Left of grid
-        b = self.N                                      # Top/Right of grid
+        ### Put origin in bottom left
+        # a = 0                                         # Bottom/Left of grid
+        # b = self.N                                    # Top/Right of grid
+        ### Put origin in center
+        a = -1*int(self.N/2)                            # Bottom/Left of grid
+        b = int(self.N/2)                               # Top/Right of grid
         cs = list(range(a,b+1))
         hls = []
         for c in cs:
@@ -207,8 +397,12 @@ class Grid:
     @property
     def vlinesegs(self) -> list:
         """Return list of vertical line segments."""
-        a = 0                                           # Bottom/Left of grid
-        b = self.N                                      # Top/Right of grid
+        ### Put origin in bottom left
+        # a = 0                                           # Bottom/Left of grid
+        # b = self.N                                      # Top/Right of grid
+        ### Put origin in center
+        a = -1*int(self.N/2)                            # Bottom/Left of grid
+        b = int(self.N/2)                               # Top/Right of grid
         cs = list(range(a,b+1))                         # Intermediate points
         vls = []
         for c in cs:
@@ -218,25 +412,17 @@ class Grid:
     def xfm_gp(self, point:tuple) -> tuple:
         """Transform point from game grid coordinates to OS Window pixel coordinates."""
         # Define 2x2 transform
-        a=self.xfm['a']
-        b=self.xfm['b']
-        c=self.xfm['c']
-        d=self.xfm['d']
+        a,b,c,d = (self._a, self._b, self._c, self._d)
         # Define offset vector (in pixel coordinates)
-        e=self.xfm['e']
-        f=self.xfm['f']
+        e,f = (self._e, self._f)
         return (a*point[0] + b*point[1] + e, c*point[0] + d*point[1] + f)
 
     def xfm_pg(self, point:tuple) -> tuple:
         """Transform point from OS Window pixel coordinates to game grid coordinates."""
         # Define 2x2 transform
-        a=self.xfm['d']
-        b=self.xfm['b']
-        c=self.xfm['c']
-        d=self.xfm['d']
+        a,b,c,d = (self._a, self._b, self._c, self._d)
         # Define offset vector (in pixel coordinates)
-        e=self.xfm['e']
-        f=self.xfm['f']
+        e,f = (self._e, self._f)
         # Calculate the determinant of the 2x2
         det = self.det
         g = ((   d/det)*point[0] + (-1*b/det)*point[1] + (b*f-d*e)/det,
@@ -248,15 +434,50 @@ class Grid:
         else:
             return (round(g[0],p), round(g[1],p))
 
+    def zoom(self, scale) -> None:
+        self.a *= scale
+        self.b *= scale
+        self.c *= scale
+        self.d *= scale
+
+    def zoom_in(self) -> None:
+        self.zoom(scale=1.1)
+
+    def zoom_out(self) -> None:
+        self.zoom(scale=0.9)
+
     def draw(self, surf:pygame.Surface) -> None:
         linesegs = self.hlinesegs + self.vlinesegs
         for grid_line in linesegs:
+            # Set color to be a gradient from lower left to upper right of blue to red
+            if (grid_line.start[0] == 0) and (grid_line.end[0] == 0):
+                color = self.game.colors['color_grid_x_axis']
+            elif (grid_line.start[1] == 0) and (grid_line.end[1] == 0):
+                color = self.game.colors['color_grid_y_axis']
+            else:
+                color = self.game.colors['color_grid_lines']
+                if (grid_line.start[0] == grid_line.end[0]):
+                    color.r = min(255, 155 + 2*int(grid_line.start[0]))
+                if (grid_line.start[1] == grid_line.end[1]):
+                    color.r = min(255, 155 + 2*int(grid_line.start[1]))
+            ### Drawing anti-aliased lines vs not anti-aliased seems to have no effect on framerate.
+            ### Not anti-aliased:
             ### line(surface, color, start_pos, end_pos, width=1) -> Rect
-            pygame.draw.line(
-                    surf,
-                    self.game.colors['color_grid_lines'],
+            if ((grid_line.start[0] == 0) and (grid_line.end[0] == 0)) or ((grid_line.start[1] == 0) and (grid_line.end[1] == 0)):
+                pygame.draw.line( surf, color,
+                        self.xfm_gp(grid_line.start),
+                        self.xfm_gp(grid_line.end),
+                        width=1
+                        )
+            ### Anti-aliased:
+            ### aaline(surface, color, start_pos, end_pos, blend=1) -> Rect
+            ### Blend is 0 or 1. Both are anti-aliased.
+            ### 1: (this is what you want) blend with the surface's existing pixel color
+            ### 0: completely overwrite the pixel (as if blending with black)
+            pygame.draw.aaline(surf, color,
                     self.xfm_gp(grid_line.start),
-                    self.xfm_gp(grid_line.end)
+                    self.xfm_gp(grid_line.end),
+                    blend=1                             # 0 or 1
                     )
 
 if __name__ == '__main__':

@@ -130,3 +130,44 @@ is a top-down view, like a sheet of graph paper placed directly over the OS
 window. With `b=0` and `c=0` it was easy to notice that the offset vector
 `(e,f)` in `T` became offset vector `blah` in `invT`. TODO: finish writing this
 section.
+
+## Rotate zoom and pan
+
+The game will not have rotate, zoom, and pan, but I would like to rotate, zoom,
+and pan while editing.
+
+TODO: come up with a mouse UI for rotating, zooming, and panning.
+
+Zooming and panning should be easy:
+
+* zooming modifies the 2x2 part of the matrix with a scaling factor
+* panning modifies the augmented column
+
+Rotation is the tricky one. I think it manipulates every value in the matrix.
+
+To understand the effect of `a`, `b`, `c`, `d`, `e`, and `f`, I place the grid origin (0,0) at the center of the grid. I also color line x=0 green (the y-axis) and line y=0 red (the x-axis). I play with the values and observe the following:
+
+- `a`
+  - y-axis is fixed, all other grid lines move
+  - increasing `a` stretches the grid towards '+x'
+  - decreasing `a` stretches the grid towards '-x'
+- `d`
+  - x-axis is fixed, all other grid lines move
+  - decreasing `d` stretches the grid towards '+y'
+  - increasing `d` stretches the grid towards '-y'
+- `b`
+  - x-axis is fixed, all other grid lines move
+  - increasing `b` shears '+'y values in the '+x' direction
+  - decreasing `b` shears '+'y values in the '-x' direction
+- `c`
+  - y-axis is fixed, all other grid lines move
+  - increasing `c` shears '+x' values in the '-y' direction
+  - decreasing `c` shears '+x' values in the '+y' direction
+- `e`
+  - increasing `e` moves the grid towards '+x'
+  - decreasing `e` moves the grid towards '-x'
+- `f`
+  - increasing `f` moves the grid towards '-y'
+  - decreasing `f` moves the grid towards '+y'
+
+I'm going to put a hold on proper rotation for now.
