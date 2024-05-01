@@ -11,6 +11,7 @@ import sys
 import atexit
 from pathlib import Path
 from dataclasses import dataclass
+import random
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"          # Set pygame env var to hide "Hello" msg
 import pygame
@@ -51,6 +52,7 @@ def define_keys() -> dict:
     (As opposed to a key triggering only a single-shot when pressed.)
     """
     keys = {}
+    keys['key_Space'] = False
     keys['key_A'] = False
     keys['key_a'] = False
     keys['key_B'] = False
@@ -69,7 +71,11 @@ def define_colors() -> dict:
     colors = {}
     colors['color_debug_hud'] = Color(255,255,255,255)
     colors['color_game_art_bgnd'] = Color(40,40,40,255)
-    colors['color_grid_lines'] = Color(100,100,250,255)
+    colors['color_grid_lines'] =     Color(100,100,250,255)
+    colors['color_vertical_lines'] = Color(150,150,250,255)
+    colors['color_voxel_top'] =      Color(150,150,250,255)
+    colors['color_voxel_left'] =      Color(80,80,250,255)
+    colors['color_voxel_right'] =     Color(120,120,250,255)
     colors['color_grid_x_axis'] = Color(100,150,200,255)
     colors['color_grid_y_axis'] = Color(200,100,200,255)
     return colors
@@ -78,6 +84,19 @@ def define_settings() -> dict:
     settings = {}
     settings['setting_debug'] = False
     return settings
+
+def make_random_voxel_artwork() -> list:
+    """Return a list of random voxels ready for rendering."""
+    voxel_artwork = []
+    for i in range(5):
+        G = (i,0)
+        height = random.choice(list(range(10,20)))
+        grid_points = [(G[0]  ,G[1]  ),
+                       (G[0]+1,G[1]  ),
+                       (G[0]+1,G[1]+1),
+                       (G[0]  ,G[1]+1)]
+        voxel_artwork.append([grid_points,height])
+    return voxel_artwork
 
 @dataclass
 class LineSeg:
@@ -107,6 +126,9 @@ class Game:
 
         # Game Data
         self.grid = Grid(self, N=50)
+
+        # Move this out to a level editor later
+        self.voxel_artwork = make_random_voxel_artwork()
 
         # FPS
         self.clock = pygame.time.Clock()
@@ -140,11 +162,21 @@ class Game:
             self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
 
         self.render_mouse_location()
+        # Use the power of xfm_gp()
         self.render_grid_tile_highlighted_at_mouse()
+        # self.render_vertical_line_on_grid(start=(0,0))
+        # self.render_vertical_line_on_grid(start=(0,0.5))
+        for voxel in self.voxel_artwork:
+            grid_points = voxel[0]
+            height = voxel[1]
+            self.render_voxel_on_grid(grid_points, height)
+
 
         # Display transform matrix element values a,b,c,d,e,f
         if self.debugHud:
-            self.debugHud.add_text(f"a: {self.grid.a:0.1f} | b: {self.grid.b:0.1f} | c: {self.grid.c:0.1f} | d: {self.grid.d:0.1f} | e: {self.grid.e:0.1f} | f: {self.grid.f:0.1f}")
+            a,b,c,d = self.grid.scaled()
+            e,f = (self.grid.e, self.grid.f)
+            self.debugHud.add_text(f"a: {a:0.1f} | b: {b:0.1f} | c: {c:0.1f} | d: {d:0.1f} | e: {e:0.1f} | f: {f:0.1f}")
 
         # Copy game art to OS window
         ### blit(source, dest, area=None, special_flags=0) -> Rect
@@ -206,6 +238,8 @@ class Game:
                 # Log any other events
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
+        # Randomize voxel artwork if Space is held
+        if self.keys['key_Space']: self.voxel_artwork = make_random_voxel_artwork()
         # Update transform based on key presses
         # U = 20; L = -20                                 # Upper/Lower bounds
         # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
@@ -232,6 +266,8 @@ class Game:
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
         match event.key:
+            case pygame.K_SPACE:
+                self.keys['key_Space'] = False
             case pygame.K_LSHIFT:
                 if self.keys['key_A']:
                     self.keys['key_A'] = False
@@ -273,7 +309,6 @@ class Game:
             case pygame.K_F2:                           # F2 - Toggle Debug
                 self.settings['setting_debug'] = not self.settings['setting_debug']
             # TEMPORARY: Print name of keys that have no unicode representation.
-            case pygame.K_SPACE: logger.debug("Space")
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
             case pygame.K_BACKSPACE: logger.debug("Backspace")
@@ -295,6 +330,9 @@ class Game:
             case pygame.K_RALT: logger.debug("Right Alt")
             case pygame.K_LCTRL: logger.debug("Left Ctrl")
             case pygame.K_RCTRL: logger.debug("Right Ctrl")
+            # TEMPORARY randomize voxel artwork
+            case pygame.K_SPACE:
+                self.keys['key_Space'] = True
             # TEMPORARY manipulate the xfm matrix
             case pygame.K_a:
                 if kmod & pygame.KMOD_SHIFT:
@@ -360,6 +398,30 @@ class Game:
         points = [self.grid.xfm_gp(G) for G in Gs]
         pygame.draw.polygon(self.surfs['surf_game_art'], Color(100,255,100), points)
 
+    def render_vertical_line_on_grid(self, start:tuple, height:int=10) -> None:
+        P = self.grid.xfm_gp(start)
+        l = LineSeg(start=P, end=(P[0],P[1]-(height*self.grid.scale)))
+        pygame.draw.line(self.surfs['surf_game_art'], self.colors['color_vertical_lines'], l.start, l.end)
+
+    def render_voxel_on_grid(self, grid_points:list, height:int=10) -> None:
+        """
+        :param grid_points:list -- list of four grid coordinates
+            The intent is these coordinates are the vertices of a rectangular
+            grid tile. The four coordinates are listed going clockwise around
+            the rectangle starting at the "lower left" of the rectangle.
+        """
+        Gs = grid_points
+        Ps = [self.grid.xfm_gp(G) for G in grid_points]
+        ### T: Top, L: Left, R: Right
+        voxel_Ts = [(P[0],P[1] - height*self.grid.scale) for P in Ps]
+        voxel_Ls = [Ps[0], Ps[1], voxel_Ts[1], voxel_Ts[0]]
+        voxel_Rs = [Ps[1], Ps[2], voxel_Ts[2], voxel_Ts[1]]
+        pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_top'], voxel_Ts)
+        pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_left'], voxel_Ls)
+        pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_right'], voxel_Rs)
+
+
+
 class Grid:
     """Define a grid of lines.
 
@@ -368,6 +430,7 @@ class Grid:
     def __init__(self, game:Game, N:int):
         self.game = game                                # The Game
         self.N = N                                      # Number of grid lines
+        self.scale = 1.0                                # Zoom scale
         self.reset()
 
     def reset(self) -> None:
@@ -440,10 +503,12 @@ class Grid:
     def f(self, value) -> float:
         self._f = value
 
+    def scaled(self) -> tuple:
+        return (self.a*self.scale, self.b*self.scale, self.c*self.scale, self.d*self.scale)
 
     @property
     def det(self) -> float:
-        a,b,c,d = (self._a, self._b, self._c, self._d)
+        a,b,c,d = self.scaled()
         det = a*d-b*c
         if det == 0:
             # If det=0, Ainv will have div by 0, so just make det very small.
@@ -484,9 +549,9 @@ class Grid:
     def xfm_gp(self, point:tuple) -> tuple:
         """Transform point from game grid coordinates to OS Window pixel coordinates."""
         # Define 2x2 transform
-        a,b,c,d = (self._a, self._b, self._c, self._d)
+        a,b,c,d = self.scaled()
         # Define offset vector (in pixel coordinates)
-        e,f = (self._e, self._f)
+        e,f = (self.e, self.f)
         return (a*point[0] + b*point[1] + e, c*point[0] + d*point[1] + f)
 
     def xfm_pg(self, point:tuple, p:int=0) -> tuple:
@@ -497,9 +562,9 @@ class Grid:
         :return tuple -- (x,y) in grid goordinates
         """
         # Define 2x2 transform
-        a,b,c,d = (self._a, self._b, self._c, self._d)
+        a,b,c,d = self.scaled()
         # Define offset vector (in pixel coordinates)
-        e,f = (self._e, self._f)
+        e,f = (self.e, self.f)
         # Calculate the determinant of the 2x2
         det = self.det
         g = ((   d/det)*point[0] + (-1*b/det)*point[1] + (b*f-d*e)/det,
@@ -510,17 +575,11 @@ class Grid:
         else:
             return (round(g[0],p), round(g[1],p))
 
-    def zoom(self, scale) -> None:
-        self.a *= scale
-        self.b *= scale
-        self.c *= scale
-        self.d *= scale
-
     def zoom_in(self) -> None:
-        self.zoom(scale=1.1)
+        self.scale *= 1.1
 
     def zoom_out(self) -> None:
-        self.zoom(scale=0.9)
+        self.scale *= 0.9
 
     def draw(self, surf:pygame.Surface) -> None:
         linesegs = self.hlinesegs + self.vlinesegs

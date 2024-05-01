@@ -171,3 +171,23 @@ To understand the effect of `a`, `b`, `c`, `d`, `e`, and `f`, I place the grid o
   - decreasing `f` moves the grid towards '+y'
 
 I'm going to put a hold on proper rotation for now.
+
+## Add height
+
+Let the third dimension just go straight up.
+
+To get started, I make very crude voxels. Not even voxels. I'm coloring three
+faces of a cube: the three faces that are visible at the default grid
+orientation.
+
+`render_voxel_on_grid(self, grid_points:list, height:int=10)` takes a list of
+four grid coordinates, intended to be a rectangular grid tile. The four
+coordinates are listed going clockwise around the rectangle starting at the
+"lower left" of the rectangle.
+
+Since these are grid coordinates, they define a face parallel to the grid
+plane. I xfm these to pixel coordinates. Then I offset the y-value of all of
+those pixel coordinates by the desired height. Now I have the points for the
+top face. I repeat this for the left and right faces by using the appropriate
+coordinates from the base and from the top. For now, I simply shade each of
+these three faces with a consistent shade of blue.
