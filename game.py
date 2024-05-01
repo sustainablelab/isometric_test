@@ -38,7 +38,7 @@ def define_surfaces(os_window:OsWindow) -> dict:
 
     # Blend artwork on the game art surface.
     # This is the final surface that is  copied to the OS Window.
-    surfs['surf_game_art'] = pygame.Surface(os_window.size)
+    surfs['surf_game_art'] = pygame.Surface(os_window.size, flags=pygame.SRCALPHA)
 
     return surfs
 
@@ -103,6 +103,7 @@ class Game:
         self.colors = define_colors()                   # Dict of Pygame Colors
         self.keys = define_keys()                       # Dict of which keyboard inputs are being pressed
         self.settings = define_settings()               # Dict of settings
+        pygame.mouse.set_visible(False)                 # Hide the OS mouse icon
 
         # Game Data
         self.grid = Grid(self, N=50)
@@ -137,6 +138,10 @@ class Game:
         mpos_g = self.grid.xfm_pg(mpos_p)
         if self.debugHud:
             self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
+
+        self.render_mouse_location()
+
+        # TODO: Display mouse location by highlighting the grid square the mouse is hovering over
 
         # Display transform matrix element values a,b,c,d,e,f
         if self.debugHud:
@@ -327,6 +332,16 @@ class Game:
                 # 'Shift+A' prints "A"  'Shift+1' prints "!"
                 logger.debug(f"{event.unicode}")
 
+    def render_mouse_location(self) -> None:
+        """Display mouse location with a white, transparent, hollow circle."""
+        mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
+        radius=10
+        ### Surface((width, height), flags=0, Surface) -> Surface
+        surf = pygame.Surface((2*radius,2*radius), flags=pygame.SRCALPHA)
+        ### circle(surface, color, center, radius, width=0) -> Rect
+        pygame.draw.circle(surf, Color(255,255,255,100), (radius,radius), radius, width=2)
+        self.surfs['surf_game_art'].blit(surf, mpos_p, special_flags=pygame.BLEND_ALPHA_SDL2)
+
 class Grid:
     """Define a grid of lines.
 
@@ -456,8 +471,13 @@ class Grid:
         e,f = (self._e, self._f)
         return (a*point[0] + b*point[1] + e, c*point[0] + d*point[1] + f)
 
-    def xfm_pg(self, point:tuple) -> tuple:
-        """Transform point from OS Window pixel coordinates to game grid coordinates."""
+    def xfm_pg(self, point:tuple, p:int=0) -> tuple:
+        """Transform point from OS Window pixel coordinates to game grid coordinates.
+
+        :param point:tuple -- (x,y) in pixel coordinates
+        :param p:int -- decimal precision of returned coordinate (default: 0, return ints)
+        :return tuple -- (x,y) in grid goordinates
+        """
         # Define 2x2 transform
         a,b,c,d = (self._a, self._b, self._c, self._d)
         # Define offset vector (in pixel coordinates)
@@ -467,7 +487,6 @@ class Grid:
         g = ((   d/det)*point[0] + (-1*b/det)*point[1] + (b*f-d*e)/det,
              (-1*c/det)*point[0] + (   a/det)*point[1] + (c*e-a*f)/det)
         # Define precision
-        p = 0
         if p==0:
             return (int(round(g[0])), int(round(g[1])))
         else:
