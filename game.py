@@ -23,7 +23,6 @@ def shutdown() -> None:
     # Clean up pygame
     pygame.font.quit()                                  # Uninitialize the font module
     pygame.quit()                                       # Uninitialize all pygame modules
-    pygame.display.set_caption("Isometric grid test")
 
 def define_surfaces(os_window:OsWindow) -> dict:
     """Return dictionary of pygame Surfaces.
@@ -85,19 +84,6 @@ def define_settings() -> dict:
     settings['setting_debug'] = False
     return settings
 
-def make_random_voxel_artwork() -> list:
-    """Return a list of random voxels ready for rendering."""
-    voxel_artwork = []
-    for i in range(5):
-        G = (i,0)
-        height = random.choice(list(range(10,20)))
-        grid_points = [(G[0]  ,G[1]  ),
-                       (G[0]+1,G[1]  ),
-                       (G[0]+1,G[1]+1),
-                       (G[0]  ,G[1]+1)]
-        voxel_artwork.append([grid_points,height])
-    return voxel_artwork
-
 @dataclass
 class LineSeg:
     start:tuple
@@ -106,6 +92,48 @@ class LineSeg:
     @property
     def vector(self) -> tuple:
         return (self.end[0] - self.start[0], self.end[1] - self.start[1])
+
+class VoxelArtwork:
+    def __init__(self, game, N:int):
+        self.game = game
+        self.N = N
+        # TODO: Move this out to a level editor later
+        self.layout = self.make_random_layout()
+
+    def make_random_layout(self) -> list:
+        """Return a list of random voxels ready for rendering.
+
+        Each item in the list is a Voxel, expressed as list [points:list, height:int].
+        """
+        voxel_artwork = []
+        a = -1*int(self.N/2)
+        b = int(self.N/2)
+        # Decrement y values so that the draw order is correct for how I am
+        # drawing voxels: I have to draw the ones "behind" first.
+        for j in range(b,a,-1):
+            for i in range(a,b):
+                G = (i,j)
+                height = random.choice(list(range(1,20)))
+                grid_points = [(G[0]  ,G[1]  ),
+                               (G[0]+1,G[1]  ),
+                               (G[0]+1,G[1]+1),
+                               (G[0]  ,G[1]+1)]
+                voxel_artwork.append([grid_points,height])
+        return voxel_artwork
+
+    def render(self, surf) -> None:
+        for voxel in self.layout:
+            grid_points = voxel[0]
+            height = voxel[1]
+            Gs = grid_points
+            Ps = [self.game.grid.xfm_gp(G) for G in grid_points]
+            ### T: Top, L: Left, R: Right
+            voxel_Ts = [(P[0],P[1] - height*self.game.grid.scale) for P in Ps]
+            voxel_Ls = [Ps[0], Ps[1], voxel_Ts[1], voxel_Ts[0]]
+            voxel_Rs = [Ps[1], Ps[2], voxel_Ts[2], voxel_Ts[1]]
+            pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
+            pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
+            pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
 
 class Game:
     def __init__(self):
@@ -118,7 +146,8 @@ class Game:
         self.os_window = OsWindow((60*16, 60*9))        # Track OS Window size
         logger.debug(f"Window size: {self.os_window.size[0]} x {self.os_window.size[1]}")
 
-        self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces
+        self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces (including pygame.display)
+        pygame.display.set_caption("Isometric grid test")
         self.colors = define_colors()                   # Dict of Pygame Colors
         self.keys = define_keys()                       # Dict of which keyboard inputs are being pressed
         self.settings = define_settings()               # Dict of settings
@@ -126,9 +155,7 @@ class Game:
 
         # Game Data
         self.grid = Grid(self, N=50)
-
-        # Move this out to a level editor later
-        self.voxel_artwork = make_random_voxel_artwork()
+        self.voxel_artwork = VoxelArtwork(self, N=self.grid.N)
 
         # FPS
         self.clock = pygame.time.Clock()
@@ -166,11 +193,7 @@ class Game:
         self.render_grid_tile_highlighted_at_mouse()
         # self.render_vertical_line_on_grid(start=(0,0))
         # self.render_vertical_line_on_grid(start=(0,0.5))
-        for voxel in self.voxel_artwork:
-            grid_points = voxel[0]
-            height = voxel[1]
-            self.render_voxel_on_grid(grid_points, height)
-
+        self.voxel_artwork.render(self.surfs['surf_game_art'])
 
         # Display transform matrix element values a,b,c,d,e,f
         if self.debugHud:
@@ -239,7 +262,7 @@ class Game:
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
         # Randomize voxel artwork if Space is held
-        if self.keys['key_Space']: self.voxel_artwork = make_random_voxel_artwork()
+        if self.keys['key_Space']: self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
         # Update transform based on key presses
         # U = 20; L = -20                                 # Upper/Lower bounds
         # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
@@ -419,7 +442,6 @@ class Game:
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_top'], voxel_Ts)
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_left'], voxel_Ls)
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_right'], voxel_Rs)
-
 
 
 class Grid:
