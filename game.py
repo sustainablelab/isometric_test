@@ -140,8 +140,7 @@ class Game:
             self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
 
         self.render_mouse_location()
-
-        # TODO: Display mouse location by highlighting the grid square the mouse is hovering over
+        self.render_grid_tile_highlighted_at_mouse()
 
         # Display transform matrix element values a,b,c,d,e,f
         if self.debugHud:
@@ -208,15 +207,23 @@ class Game:
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
         # Update transform based on key presses
-        U = 20; L = -20                                 # Upper/Lower bounds
-        if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
-        if self.keys['key_B']: self.grid.b = min(U, self.grid.b+1)
-        if self.keys['key_C']: self.grid.c = min(U, self.grid.c+1)
-        if self.keys['key_D']: self.grid.d = min(U, self.grid.d+1)
-        if self.keys['key_a']: self.grid.a = max(L, self.grid.a-1)
-        if self.keys['key_b']: self.grid.b = max(L, self.grid.b-1)
-        if self.keys['key_c']: self.grid.c = max(L, self.grid.c-1)
-        if self.keys['key_d']: self.grid.d = max(L, self.grid.d-1)
+        # U = 20; L = -20                                 # Upper/Lower bounds
+        # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
+        # if self.keys['key_B']: self.grid.b = min(U, self.grid.b+1)
+        # if self.keys['key_C']: self.grid.c = min(U, self.grid.c+1)
+        # if self.keys['key_D']: self.grid.d = min(U, self.grid.d+1)
+        # if self.keys['key_a']: self.grid.a = max(L, self.grid.a-1)
+        # if self.keys['key_b']: self.grid.b = max(L, self.grid.b-1)
+        # if self.keys['key_c']: self.grid.c = max(L, self.grid.c-1)
+        # if self.keys['key_d']: self.grid.d = max(L, self.grid.d-1)
+        if self.keys['key_A']: self.grid.a += 1
+        if self.keys['key_B']: self.grid.b += 1
+        if self.keys['key_C']: self.grid.c += 1
+        if self.keys['key_D']: self.grid.d += 1
+        if self.keys['key_a']: self.grid.a -= 1
+        if self.keys['key_b']: self.grid.b -= 1
+        if self.keys['key_c']: self.grid.c -= 1
+        if self.keys['key_d']: self.grid.d -= 1
         if self.keys['key_E']: self.grid.e += 1
         if self.keys['key_e']: self.grid.e -= 1
         if self.keys['key_F']: self.grid.f += 1
@@ -341,6 +348,17 @@ class Game:
         ### circle(surface, color, center, radius, width=0) -> Rect
         pygame.draw.circle(surf, Color(255,255,255,100), (radius,radius), radius, width=2)
         self.surfs['surf_game_art'].blit(surf, mpos_p, special_flags=pygame.BLEND_ALPHA_SDL2)
+
+    def render_grid_tile_highlighted_at_mouse(self) -> None:
+        """Display mouse location by highlighting the grid square the mouse is hovering over."""
+        G = self.grid.xfm_pg(pygame.mouse.get_pos())
+        Gs = [ # Define a square tile on the grid
+                (G[0],  G[1]  ),
+                (G[0]+1,G[1]  ),
+                (G[0]+1,G[1]+1),
+                (G[0]  ,G[1]+1)]
+        points = [self.grid.xfm_gp(G) for G in Gs]
+        pygame.draw.polygon(self.surfs['surf_game_art'], Color(100,255,100), points)
 
 class Grid:
     """Define a grid of lines.
