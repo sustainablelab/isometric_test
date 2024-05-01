@@ -43,6 +43,13 @@ def define_surfaces(os_window:OsWindow) -> dict:
     return surfs
 
 def define_keys() -> dict:
+    """Return a dict to track which unicode values are being pressed.
+
+    These are the keys, and their Shifted versions, that continue to have
+    effect while held.
+
+    (As opposed to a key triggering only a single-shot when pressed.)
+    """
     keys = {}
     keys['key_A'] = False
     keys['key_a'] = False
@@ -67,6 +74,11 @@ def define_colors() -> dict:
     colors['color_grid_y_axis'] = Color(200,100,200,255)
     return colors
 
+def define_settings() -> dict:
+    settings = {}
+    settings['setting_debug'] = False
+    return settings
+
 @dataclass
 class LineSeg:
     start:tuple
@@ -89,9 +101,8 @@ class Game:
 
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces
         self.colors = define_colors()                   # Dict of Pygame Colors
-        self.keys = define_keys()                       # Dict of keyboard inputs
-
-        self.debugHud = None                            # HUD created in game_loop()
+        self.keys = define_keys()                       # Dict of which keyboard inputs are being pressed
+        self.settings = define_settings()               # Dict of settings
 
         # Game Data
         self.grid = Grid(self, N=50)
@@ -104,7 +115,10 @@ class Game:
 
     def game_loop(self):
         # Create the debug HUD
-        self.debugHud = DebugHud(self)
+        if self.settings['setting_debug']:
+            self.debugHud = DebugHud(self)
+        else:
+            self.debugHud = None
 
         # Handle keyboard and mouse
         # Zoom by scrolling the mouse wheel
@@ -121,17 +135,20 @@ class Game:
         # Display mouse coordinates in game grid coordinate system
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
         mpos_g = self.grid.xfm_pg(mpos_p)
-        self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
+        if self.debugHud:
+            self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
 
         # Display transform matrix element values a,b,c,d,e,f
-        self.debugHud.add_text(f"a: {self.grid.a:0.1f} | b: {self.grid.b:0.1f} | c: {self.grid.c:0.1f} | d: {self.grid.d:0.1f} | e: {self.grid.e:0.1f} | f: {self.grid.f:0.1f}")
+        if self.debugHud:
+            self.debugHud.add_text(f"a: {self.grid.a:0.1f} | b: {self.grid.b:0.1f} | c: {self.grid.c:0.1f} | d: {self.grid.d:0.1f} | e: {self.grid.e:0.1f} | f: {self.grid.f:0.1f}")
 
         # Copy game art to OS window
         ### blit(source, dest, area=None, special_flags=0) -> Rect
         self.surfs['surf_os_window'].blit(self.surfs['surf_game_art'], (0,0))
 
         # Display Debug HUD overlay
-        self.debugHud.render(self.colors['color_debug_hud'])
+        if self.debugHud:
+            self.debugHud.render(self.colors['color_debug_hud'])
 
         # Draw to the OS window
         pygame.display.update()
@@ -241,6 +258,8 @@ class Game:
         kmod = pygame.key.get_mods()                    # Which modifier keys are held
         match event.key:
             case pygame.K_q: sys.exit()                 # q - Quit
+            case pygame.K_F2:                           # F2 - Toggle Debug
+                self.settings['setting_debug'] = not self.settings['setting_debug']
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_SPACE: logger.debug("Space")
             case pygame.K_RETURN: logger.debug("Return")
@@ -248,7 +267,6 @@ class Game:
             case pygame.K_BACKSPACE: logger.debug("Backspace")
             case pygame.K_DELETE: logger.debug("Delete")
             case pygame.K_F1: logger.debug("F1")
-            case pygame.K_F2: logger.debug("F2")
             case pygame.K_F3: logger.debug("F3")
             case pygame.K_F4: logger.debug("F4")
             case pygame.K_F5: logger.debug("F5")
@@ -470,26 +488,33 @@ class Grid:
     def draw(self, surf:pygame.Surface) -> None:
         linesegs = self.hlinesegs + self.vlinesegs
         for grid_line in linesegs:
-            # Set color to be a gradient from lower left to upper right of blue to red
-            if (grid_line.start[0] == 0) and (grid_line.end[0] == 0):
-                color = self.game.colors['color_grid_x_axis']
-            elif (grid_line.start[1] == 0) and (grid_line.end[1] == 0):
-                color = self.game.colors['color_grid_y_axis']
+            if self.game.settings['setting_debug']:
+                # Set color to be a gradient from lower left to upper right of blue to red
+                if (grid_line.start[0] == 0) and (grid_line.end[0] == 0):
+                    color = Color(self.game.colors['color_grid_x_axis'])
+                elif (grid_line.start[1] == 0) and (grid_line.end[1] == 0):
+                    color = Color(self.game.colors['color_grid_y_axis'])
+                else:
+                    color = Color(self.game.colors['color_grid_lines'])
+                    if (grid_line.start[0] == grid_line.end[0]):
+                        # Vertical lines get more red from left to right
+                        color.r = min(255, 155 + 2*int(grid_line.start[0]))
+                    elif (grid_line.start[1] == grid_line.end[1]):
+                        # Horizontal lines get more red from top to bottom
+                        color.r = min(255, 155 + 2*int(grid_line.start[1]))
             else:
-                color = self.game.colors['color_grid_lines']
-                if (grid_line.start[0] == grid_line.end[0]):
-                    color.r = min(255, 155 + 2*int(grid_line.start[0]))
-                if (grid_line.start[1] == grid_line.end[1]):
-                    color.r = min(255, 155 + 2*int(grid_line.start[1]))
+                color = Color(self.game.colors['color_grid_lines'])
             ### Drawing anti-aliased lines vs not anti-aliased seems to have no effect on framerate.
             ### Not anti-aliased:
             ### line(surface, color, start_pos, end_pos, width=1) -> Rect
-            if ((grid_line.start[0] == 0) and (grid_line.end[0] == 0)) or ((grid_line.start[1] == 0) and (grid_line.end[1] == 0)):
-                pygame.draw.line( surf, color,
-                        self.xfm_gp(grid_line.start),
-                        self.xfm_gp(grid_line.end),
-                        width=2
-                        )
+            if self.game.settings['setting_debug']:
+                # Draw x and y axis thicker and a different color from the rest of the grid
+                if ((grid_line.start[0] == 0) and (grid_line.end[0] == 0)) or ((grid_line.start[1] == 0) and (grid_line.end[1] == 0)):
+                    pygame.draw.line( surf, color,
+                            self.xfm_gp(grid_line.start),
+                            self.xfm_gp(grid_line.end),
+                            width=2
+                            )
             ### Anti-aliased:
             ### aaline(surface, color, start_pos, end_pos, blend=1) -> Rect
             ### Blend is 0 or 1. Both are anti-aliased.
