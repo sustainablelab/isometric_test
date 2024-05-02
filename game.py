@@ -105,9 +105,8 @@ class VoxelArtwork:
         self._percentage = percentage
         # TODO: Move this out to a level editor later
         # Make a layout of voxels in grid space
-        self.layout = self.make_random_layout()
-        # Adjust the size of each voxel: how much tile it covers
-        self.adjusted_layout = self.adjust_voxel_size()
+        # self.layout = self.make_random_layout()
+        self.layout = self.make_specific_layout()
 
     @property
     def percentage(self) -> float:
@@ -115,7 +114,6 @@ class VoxelArtwork:
     @percentage.setter
     def percentage(self, value:float):
         self._percentage = value
-        self.adjusted_layout = self.adjust_voxel_size()
 
     def make_random_layout(self) -> list:
         """Return a list of random voxels ready for rendering.
@@ -142,7 +140,37 @@ class VoxelArtwork:
                 voxel_artwork.append([grid_points,height])
         return voxel_artwork
 
+    def make_specific_layout(self) -> list:
+        """Return a list of voxels ready for rendering.
+
+        Each item in the list is a Voxel, expressed as list [points:list, height:int].
+        """
+
+        voxel_artwork = []
+        a = -1*int(self.N/2)
+        b = int(self.N/2)
+        wall1 = [(i,a) for i in range(a,b)]
+        wall2 = [(i,b-1) for i in range(a,b)]
+        wall3 = [(a,i) for i in range(a,b)]
+        wall4 = [(b-1,i) for i in range(a,b)]
+        walls = wall1 + wall2 + wall3 + wall4
+
+        # Decrement y values so that the draw order is correct for how I am
+        # drawing voxels: I have to draw the ones "behind" first.
+        for j in range(b,a-1,-1):
+            for i in range(a,b):
+                G = (i,j)
+                if G in walls:
+                    height = random.choice(list(range(25,30)))
+                    grid_points = [(G[0]  ,G[1]  ),
+                                   (G[0]+1,G[1]  ),
+                                   (G[0]+1,G[1]+1),
+                                   (G[0]  ,G[1]+1)]
+                    voxel_artwork.append([grid_points,height])
+        return voxel_artwork
+
     def adjust_voxel_size(self) -> list:
+        """Scale size of each voxel by some percentage."""
         adjusted_voxel_artwork = []
         # Calculate how much to shrink voxels
         p = 1-self.percentage
@@ -163,7 +191,7 @@ class VoxelArtwork:
 
     def render(self, surf) -> None:
         # Convert each voxel to pixel coordinates and render
-        for voxel in self.adjusted_layout:
+        for voxel in self.adjust_voxel_size():
             grid_points = voxel[0]
             height = voxel[1]
             Gs = grid_points
@@ -309,7 +337,9 @@ class Game:
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
         # Randomize voxel artwork if Space is held
-        if self.keys['key_Space']: self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
+        if self.keys['key_Space']:
+            # self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
+            self.voxel_artwork.layout = self.voxel_artwork.make_specific_layout()
         # Update transform based on key presses
         # U = 20; L = -20                                 # Upper/Lower bounds
         # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
@@ -493,7 +523,6 @@ class Game:
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_top'], voxel_Ts)
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_left'], voxel_Ls)
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_right'], voxel_Rs)
-
 
 class Grid:
     """Define a grid of lines.
