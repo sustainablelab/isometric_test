@@ -94,11 +94,28 @@ class LineSeg:
         return (self.end[0] - self.start[0], self.end[1] - self.start[1])
 
 class VoxelArtwork:
-    def __init__(self, game, N:int):
+    """Extrude tiles on the isometric grid.
+
+    :param N:int -- extrude NxN tiles, centered at grid (0,0)
+    :param percentage:float -- percentage of each tile covered by voxel
+    """
+    def __init__(self, game, N:int, percentage:float=1.0):
         self.game = game
         self.N = N
+        self._percentage = percentage
         # TODO: Move this out to a level editor later
+        # Make a layout of voxels in grid space
         self.layout = self.make_random_layout()
+        # Adjust the size of each voxel: how much tile it covers
+        self.adjusted_layout = self.adjust_voxel_size()
+
+    @property
+    def percentage(self) -> float:
+        return self._percentage
+    @percentage.setter
+    def percentage(self, value:float):
+        self._percentage = value
+        self.adjusted_layout = self.adjust_voxel_size()
 
     def make_random_layout(self) -> list:
         """Return a list of random voxels ready for rendering.
@@ -114,6 +131,10 @@ class VoxelArtwork:
             for i in range(a,b):
                 G = (i,j)
                 height = random.choice(list(range(1,20)))
+                # grid_points = [[G[0]   + d,G[1]   + d],
+                #                [G[0]+1 - d,G[1]   + d],
+                #                [G[0]+1 - d,G[1]+1 - d],
+                #                [G[0]   + d,G[1]+1 - d]]
                 grid_points = [(G[0]  ,G[1]  ),
                                (G[0]+1,G[1]  ),
                                (G[0]+1,G[1]+1),
@@ -121,16 +142,39 @@ class VoxelArtwork:
                 voxel_artwork.append([grid_points,height])
         return voxel_artwork
 
-    def render(self, surf) -> None:
+    def adjust_voxel_size(self) -> list:
+        adjusted_voxel_artwork = []
+        # Calculate how much to shrink voxels
+        p = 1-self.percentage
+        d = p/2
+        # Convert each voxel to pixel coordinates and render
         for voxel in self.layout:
+            Gs = voxel[0]
+            height = voxel[1]
+            adjusted_grid_points = [
+                    (Gs[0][0] + d, Gs[0][1] + d),
+                    (Gs[1][0] - d, Gs[1][1] + d),
+                    (Gs[2][0] - d, Gs[2][1] - d),
+                    (Gs[3][0] + d, Gs[3][1] - d)
+                    ]
+            # Apply self.percentage and keep the voxel centered on the tile
+            adjusted_voxel_artwork.append([adjusted_grid_points,height])
+        return adjusted_voxel_artwork
+
+    def render(self, surf) -> None:
+        # Convert each voxel to pixel coordinates and render
+        for voxel in self.adjusted_layout:
             grid_points = voxel[0]
             height = voxel[1]
             Gs = grid_points
+            # Convert to pixel coordinates
             Ps = [self.game.grid.xfm_gp(G) for G in grid_points]
+            # Describe the three visible surfaces of the voxel as quads
             ### T: Top, L: Left, R: Right
             voxel_Ts = [(P[0],P[1] - height*self.game.grid.scale) for P in Ps]
             voxel_Ls = [Ps[0], Ps[1], voxel_Ts[1], voxel_Ts[0]]
             voxel_Rs = [Ps[1], Ps[2], voxel_Ts[2], voxel_Ts[1]]
+            # Render the three visible quads
             pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
             pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
             pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
@@ -194,6 +238,9 @@ class Game:
         # self.render_vertical_line_on_grid(start=(0,0))
         # self.render_vertical_line_on_grid(start=(0,0.5))
         self.voxel_artwork.render(self.surfs['surf_game_art'])
+
+        if self.debugHud:
+            self.debugHud.add_text(f"Voxel %: {int(100*self.voxel_artwork.percentage)}%")
 
         # Display transform matrix element values a,b,c,d,e,f
         if self.debugHud:
@@ -331,6 +378,10 @@ class Game:
             case pygame.K_q: sys.exit()                 # q - Quit
             case pygame.K_F2:                           # F2 - Toggle Debug
                 self.settings['setting_debug'] = not self.settings['setting_debug']
+            case pygame.K_UP:
+                self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
+            case pygame.K_DOWN:
+                self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
