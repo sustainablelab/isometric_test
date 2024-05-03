@@ -296,6 +296,8 @@ class Game:
         # Draw grid
         self.grid.draw(self.surfs['surf_game_art'])
 
+        self.render_player()
+
         # Display mouse coordinates in game grid coordinate system
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
         mpos_g = self.grid.xfm_pg(mpos_p)
@@ -450,10 +452,16 @@ class Game:
             case pygame.K_q: sys.exit()                 # q - Quit
             case pygame.K_F2:                           # F2 - Toggle Debug
                 self.settings['setting_debug'] = not self.settings['setting_debug']
+            # TEMPORARY adjust percentage that voxels cover tiles
             case pygame.K_UP:
                 self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
             case pygame.K_DOWN:
                 self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
+            # TEMPORARY player movement
+            case pygame.K_j: logger.debug("Move Down")
+            case pygame.K_k: logger.debug("Move Up")
+            case pygame.K_h: logger.debug("Move Left")
+            case pygame.K_l: logger.debug("Move Right")
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
@@ -522,6 +530,32 @@ class Game:
                 #       'A' prints "a"        '1' prints "1"
                 # 'Shift+A' prints "A"  'Shift+1' prints "!"
                 logger.debug(f"{event.unicode}")
+
+    def render_player(self) -> None:
+        """Display the player."""
+        # TODO: make this a class to keep track of its position, then add movement controls
+        G = (0,0)                                       # TEMPORARY: hardcode player position
+        percentage = 0.5                                # Player fills half the tile
+        p = 1-percentage
+        d = p/2
+        wiggle = 0.5                                    # Amount to randomize each coordinate value
+        Gs = [ # Define a polygon on the grid
+              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
+              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
+              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d)),
+              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d))]
+        # Center of tile
+        Gc =  (G[0] + 0.5   + random.uniform(-0.5*d, 0.5*d), G[1] + 0.5  + random.uniform(-0.5*d, 0.5*d))
+        # Convert to pixel coordinates
+        points = [self.grid.xfm_gp(G) for G in Gs]
+        Pc = self.grid.xfm_gp(Gc)
+        # Elevate that center point
+        height = 10
+        center = (Pc[0], Pc[1] - height*self.grid.scale)
+        # pygame.draw.polygon(self.surfs['surf_game_art'],Color(100,255,100), points)
+        ### line(surface, color, start_pos, end_pos) -> Rect
+        for p in points:
+            pygame.draw.line(self.surfs['surf_game_art'], self.colors['color_grid_y_axis'], p, center)
 
     def render_mouse_location(self) -> None:
         """Display mouse location with a white, transparent, hollow circle."""
