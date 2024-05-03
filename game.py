@@ -93,6 +93,21 @@ class LineSeg:
     def vector(self) -> tuple:
         return (self.end[0] - self.start[0], self.end[1] - self.start[1])
 
+@dataclass
+class Wall:
+    """A wall is a list [points:list, height:int].
+
+    Each point is the "lower-left" grid coordinate of that bit of wall.
+
+    >>> wall = Wall(points=[(i,-2) for i in range(-2,2)], height=25)
+    >>> print(wall)
+    Wall(points=[(-2, -2), (-1, -2), (0, -2), (1, -2)], height=25)
+    """
+    points:list
+    height:int
+    # style:str = "style_shade_faces_solid_color"
+    style:str = "style_skeleton_frame"
+
 class VoxelArtwork:
     """Extrude tiles on the isometric grid.
 
@@ -149,24 +164,39 @@ class VoxelArtwork:
         voxel_artwork = []
         a = -1*int(self.N/2)
         b = int(self.N/2)
-        wall1 = [(i,a) for i in range(a,b)]
-        wall2 = [(i,b-1) for i in range(a,b)]
-        wall3 = [(a,i) for i in range(a,b)]
-        wall4 = [(b-1,i) for i in range(a,b)]
-        walls = wall1 + wall2 + wall3 + wall4
+        # wall1 = [(i,a) for i in range(a,b)];
+        # wall2 = [(i,b-1) for i in range(a,b)];
+        # wall3 = [(a,i) for i in range(a,b)];
+        # wall4 = [(b-1,i) for i in range(a,b)];
+        # walls = wall1 + wall2 + wall3 + wall4
+        # wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front left wall
+        wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_shade_faces_solid_color")  # Front left wall
+        wall2 = Wall(points=[(i,  b-1) for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back right wall
+        wall3 = Wall(points=[(a,  i)   for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back left wall
+        wall4 = Wall(points=[(b-1,i)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front right wall
+        walls = [wall1, wall2, wall3, wall4]
 
         # Decrement y values so that the draw order is correct for how I am
         # drawing voxels: I have to draw the ones "behind" first.
         for j in range(b,a-1,-1):
             for i in range(a,b):
                 G = (i,j)
-                if G in walls:
-                    height = random.choice(list(range(25,30)))
-                    grid_points = [(G[0]  ,G[1]  ),
-                                   (G[0]+1,G[1]  ),
-                                   (G[0]+1,G[1]+1),
-                                   (G[0]  ,G[1]+1)]
-                    voxel_artwork.append([grid_points,height])
+                # if G in walls:
+                #     height = random.choice(list(range(25,30)))
+                #     grid_points = [(G[0]  ,G[1]  ),
+                #                    (G[0]+1,G[1]  ),
+                #                    (G[0]+1,G[1]+1),
+                #                    (G[0]  ,G[1]+1)]
+                #     voxel_artwork.append([grid_points,height])
+                for wall in walls:
+                    if G in wall.points:
+                        height = random.choice(list(range(wall.height,wall.height+5)))
+                        grid_points = [(G[0]  ,G[1]  ),
+                                       (G[0]+1,G[1]  ),
+                                       (G[0]+1,G[1]+1),
+                                       (G[0]  ,G[1]+1)]
+                        voxel_artwork.append([grid_points,height,wall.style])
+                        break
         return voxel_artwork
 
     def adjust_voxel_size(self) -> list:
@@ -179,6 +209,7 @@ class VoxelArtwork:
         for voxel in self.layout:
             Gs = voxel[0]
             height = voxel[1]
+            style = voxel[2]
             adjusted_grid_points = [
                     (Gs[0][0] + d, Gs[0][1] + d),
                     (Gs[1][0] - d, Gs[1][1] + d),
@@ -186,7 +217,7 @@ class VoxelArtwork:
                     (Gs[3][0] + d, Gs[3][1] - d)
                     ]
             # Apply self.percentage and keep the voxel centered on the tile
-            adjusted_voxel_artwork.append([adjusted_grid_points,height])
+            adjusted_voxel_artwork.append([adjusted_grid_points,height,style])
         return adjusted_voxel_artwork
 
     def render(self, surf) -> None:
@@ -194,6 +225,7 @@ class VoxelArtwork:
         for voxel in self.adjust_voxel_size():
             grid_points = voxel[0]
             height = voxel[1]
+            style = voxel[2]
             Gs = grid_points
             # Convert to pixel coordinates
             Ps = [self.game.grid.xfm_gp(G) for G in grid_points]
@@ -202,10 +234,20 @@ class VoxelArtwork:
             voxel_Ts = [(P[0],P[1] - height*self.game.grid.scale) for P in Ps]
             voxel_Ls = [Ps[0], Ps[1], voxel_Ts[1], voxel_Ts[0]]
             voxel_Rs = [Ps[1], Ps[2], voxel_Ts[2], voxel_Ts[1]]
-            # Render the three visible quads
-            pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
-            pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
-            pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
+            match style:
+                case "style_shade_faces_solid_color":
+                    # Render the three visible quads
+                    ### polygon(surface, color, points) -> Rect
+                    pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
+                    pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
+                    pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
+                case "style_skeleton_frame":
+                    ### polygon(surface, color, points, width=0) -> Rect
+                    pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts, width=1)
+                    pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls, width=1)
+                    pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs, width=1)
+                case _:
+                    pass
 
 class Game:
     def __init__(self):
