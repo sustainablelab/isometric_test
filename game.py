@@ -51,7 +51,9 @@ def define_keys() -> dict:
     (As opposed to a key triggering only a single-shot when pressed.)
     """
     keys = {}
+    # Special
     keys['key_Space'] = False
+    # Xfm matrix
     keys['key_A'] = False
     keys['key_a'] = False
     keys['key_B'] = False
@@ -64,6 +66,11 @@ def define_keys() -> dict:
     keys['key_e'] = False
     keys['key_F'] = False
     keys['key_f'] = False
+    # Movement
+    keys['key_j'] = False
+    keys['key_k'] = False
+    keys['key_h'] = False
+    keys['key_l'] = False
     return keys
 
 def define_colors() -> dict:
@@ -444,6 +451,7 @@ class Game:
         # if self.keys['key_b']: self.grid.b = max(L, self.grid.b-1)
         # if self.keys['key_c']: self.grid.c = max(L, self.grid.c-1)
         # if self.keys['key_d']: self.grid.d = max(L, self.grid.d-1)
+        # Update transform based on key presses
         if self.keys['key_A']: self.grid.a += 1
         if self.keys['key_B']: self.grid.b += 1
         if self.keys['key_C']: self.grid.c += 1
@@ -456,6 +464,20 @@ class Game:
         if self.keys['key_e']: self.grid.e -= 1
         if self.keys['key_F']: self.grid.f += 1
         if self.keys['key_f']: self.grid.f -= 1
+        # Player movement
+        speed = 0.3
+        if self.keys['key_j']:
+            pos = self.player.pos
+            self.player.pos = (pos[0],          pos[1] - speed)
+        if self.keys['key_k']:
+            pos = self.player.pos
+            self.player.pos = (pos[0],          pos[1] + speed)
+        if self.keys['key_h']:
+            pos = self.player.pos
+            self.player.pos = (pos[0] - speed,  pos[1])
+        if self.keys['key_l']:
+            pos = self.player.pos
+            self.player.pos = (pos[0] + speed,  pos[1])
 
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
@@ -493,6 +515,15 @@ class Game:
             case pygame.K_f:
                 self.keys['key_F'] = False
                 self.keys['key_f'] = False
+            # TEMPORARY: player movement
+            case pygame.K_j: # Move Down
+                self.keys['key_j'] = False
+            case pygame.K_k: # Move Up
+                self.keys['key_k'] = False
+            case pygame.K_h: # Move Left
+                self.keys['key_h'] = False
+            case pygame.K_l: # Move Right
+                self.keys['key_l'] = False
             case _:
                 pass
 
@@ -507,25 +538,33 @@ class Game:
                 self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
             case pygame.K_DOWN:
                 self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
+            case pygame.K_r:
+                # Reset view back to initial view after changing Xfm matrix values (a,b,c,d,e,f,zoom)
+                self.grid.reset()
+            case pygame.K_z:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.grid.zoom_in()
+                else:
+                    self.grid.zoom_out()
             # TEMPORARY player movement
             # TODO: when player moves next to a wall, figure out whether
             # player is behind or in front and render player appropriately.
-            case pygame.K_j:
-                pos = self.player.pos
-                self.player.pos = (pos[0],pos[1] - 1)
-                logger.debug("Move Down")
-            case pygame.K_k:
-                pos = self.player.pos
-                self.player.pos = (pos[0],pos[1] + 1)
-                logger.debug("Move Up")
-            case pygame.K_h:
-                pos = self.player.pos
-                self.player.pos = (pos[0] - 1 , pos[1])
-                logger.debug("Move Left")
-            case pygame.K_l:
-                pos = self.player.pos
-                self.player.pos = (pos[0] + 1 , pos[1])
-                logger.debug("Move Right")
+            # case pygame.K_j:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0],pos[1] - 1)
+            #     logger.debug("Move Down")
+            # case pygame.K_k:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0],pos[1] + 1)
+            #     logger.debug("Move Up")
+            # case pygame.K_h:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0] - 1 , pos[1])
+            #     logger.debug("Move Left")
+            # case pygame.K_l:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0] + 1 , pos[1])
+            #     logger.debug("Move Right")
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
@@ -582,13 +621,15 @@ class Game:
                     self.keys['key_F'] = True
                 else:
                     self.keys['key_f'] = True
-            case pygame.K_r:
-                self.grid.reset()
-            case pygame.K_z:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.grid.zoom_in()
-                else:
-                    self.grid.zoom_out()
+            # TEMPORARY: player movement
+            case pygame.K_j: # Move Down
+                self.keys['key_j'] = True
+            case pygame.K_k: # Move Up
+                self.keys['key_k'] = True
+            case pygame.K_h: # Move Left
+                self.keys['key_h'] = True
+            case pygame.K_l: # Move Right
+                self.keys['key_l'] = True
             case _:
                 # Print unicode for the pressed key or key combo:
                 #       'A' prints "a"        '1' prints "1"
