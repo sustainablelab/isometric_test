@@ -118,7 +118,7 @@ class Wall:
 class Player:
     def __init__(self, game):
         self.game = game
-        self.pos = (0,0)
+        self.pos = (self.game.tile_map.a+1,0)
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
         G = self.pos
@@ -275,8 +275,27 @@ class VoxelArtwork:
         return adjusted_voxel_artwork
 
     def render(self, surf) -> None:
+
+        # TODO: when player is near another voxel, figure out whether
+        # player is behind or in front and place player and voxel in correct draw order.
+        # TEMPORARY: render player first
+        # self.game.player.render(surf)
+
+        # Adjust size of voxels based on percentage that it fills its tile
+        voxels = self.adjust_voxel_size()
+        # Figure out when to draw player in list of voxels for correct draw order
+        player = self.game.player
+        player_voxel_index = 0                          # 0 : draw first
+        # TODO: iterate over this backwards and break after first hit
+        for i,voxel in enumerate(voxels):
+            grid_points = voxel[0]
+            lower_right = grid_points[1]                # 1 : Lower right corner
+            if (player.pos[0] >= lower_right[0]) and (player.pos[1] >= lower_right[1]):
+                # Player is in front of this voxel; update draw order
+                player_voxel_index = i
+
         # Convert each voxel to pixel coordinates and render
-        for voxel in self.adjust_voxel_size():
+        for i,voxel in enumerate(voxels):
             grid_points = voxel[0]
             height = voxel[1]
             style = voxel[2]
@@ -302,6 +321,9 @@ class VoxelArtwork:
                     pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs, width=1)
                 case _:
                     pass
+            # Draw player
+            if  i == player_voxel_index:
+                player.render(surf)
 
 class Game:
     def __init__(self):
@@ -351,9 +373,6 @@ class Game:
 
         # Draw grid
         self.grid.draw(self.surfs['surf_game_art'])
-
-        # self.render_player()
-        self.player.render(self.surfs['surf_game_art'])
 
         # Display mouse coordinates in game grid coordinate system
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
@@ -547,8 +566,6 @@ class Game:
                 else:
                     self.grid.zoom_out()
             # TEMPORARY player movement
-            # TODO: when player moves next to a wall, figure out whether
-            # player is behind or in front and render player appropriately.
             # case pygame.K_j:
             #     pos = self.player.pos
             #     self.player.pos = (pos[0],pos[1] - 1)
