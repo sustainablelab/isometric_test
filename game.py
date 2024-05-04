@@ -108,20 +108,74 @@ class Wall:
     # style:str = "style_shade_faces_solid_color"
     style:str = "style_skeleton_frame"
 
-class VoxelArtwork:
-    """Extrude tiles on the isometric grid.
-
-    :param N:int -- extrude NxN tiles, centered at grid (0,0)
-    :param percentage:float -- percentage of each tile covered by voxel
-    """
-    def __init__(self, game, N:int, percentage:float=1.0):
+class Player:
+    def __init__(self, game):
         self.game = game
+        self.pos = (0,0)
+    def render(self, surf:pygame.Surface) -> None:
+        """Display the player."""
+        G = self.pos
+        percentage = 0.5                                # Player fills half the tile
+        p = 1-percentage
+        d = p/2
+        wiggle = 0.5                                    # Amount to randomize each coordinate value
+        Gs = [ # Define a polygon on the grid
+              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
+              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
+              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d)),
+              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d))]
+        # Center of tile
+        Gc =  (G[0] + 0.5   + random.uniform(-0.5*d, 0.5*d), G[1] + 0.5  + random.uniform(-0.5*d, 0.5*d))
+        # Convert to pixel coordinates
+        points = [self.game.grid.xfm_gp(G) for G in Gs]
+        Pc = self.game.grid.xfm_gp(Gc)
+        # Elevate that center point
+        height = 10
+        center = (Pc[0], Pc[1] - height*self.game.grid.scale)
+        # pygame.draw.polygon(self.surfs['surf_game_art'],Color(100,255,100), points)
+        ### line(surface, color, start_pos, end_pos) -> Rect
+        for p in points:
+            pygame.draw.line(surf, self.game.colors['color_grid_y_axis'], p, center)
+
+# TODO: Move this out to a level editor later
+class TileMap:
+    """A square layout of items in grid coordinates.
+
+    :param N:int -- length of grid (grid is NxN)
+
+    Attributes
+    a:int -- lower left of layout is grid coordinate (a,a)
+    b:int -- lower left of layout is grid coordinate (b,b)
+    walls:list -- list of walls, each wall is a list of voxels, each voxel has a pos, height, and style
+    """
+    def __init__(self, N:int):
         self.N = N
+        self.a = -1*int(self.N/2)
+        self.b = int(self.N/2)
+
+        # Make a layout of walls
+        a = self.a
+        b = self.b
+        wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_shade_faces_solid_color")  # Front left wall
+        wall2 = Wall(points=[(i,  b-1) for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back right wall
+        wall3 = Wall(points=[(a,  i)   for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back left wall
+        wall4 = Wall(points=[(b-1,i)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front right wall
+        self.walls = [wall1, wall2, wall3, wall4]
+
+class VoxelArtwork:
+    """Extrude voxels on the isometric grid.
+
+    :param game -- the Game (for access to all the Game data)
+    :param percentage:float -- percentage that each tile is covered by the voxel
+    """
+    def __init__(self, game, percentage:float=1.0):
+        self.game = game
+        self.N = self.game.grid.N
         self._percentage = percentage
         # TODO: Move this out to a level editor later
         # Make a layout of voxels in grid space
         # self.layout = self.make_random_layout()
-        self.layout = self.make_specific_layout()
+        self.layout = self.make_voxels_from_tile_map()
 
     @property
     def percentage(self) -> float:
@@ -155,39 +209,32 @@ class VoxelArtwork:
                 voxel_artwork.append([grid_points,height])
         return voxel_artwork
 
-    def make_specific_layout(self) -> list:
+    def make_voxels_from_tile_map(self) -> list:
         """Return a list of voxels ready for rendering.
 
         Each item in the list is a Voxel, expressed as list [points:list, height:int].
+        Height is assigned here: a nominal height is assigned in the tile map,
+        but a small random change in height is added here.
         """
 
         voxel_artwork = []
-        a = -1*int(self.N/2)
-        b = int(self.N/2)
-        # wall1 = [(i,a) for i in range(a,b)];
-        # wall2 = [(i,b-1) for i in range(a,b)];
-        # wall3 = [(a,i) for i in range(a,b)];
-        # wall4 = [(b-1,i) for i in range(a,b)];
-        # walls = wall1 + wall2 + wall3 + wall4
-        # wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front left wall
-        wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_shade_faces_solid_color")  # Front left wall
-        wall2 = Wall(points=[(i,  b-1) for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back right wall
-        wall3 = Wall(points=[(a,  i)   for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back left wall
-        wall4 = Wall(points=[(b-1,i)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front right wall
-        walls = [wall1, wall2, wall3, wall4]
+        ### OLD
+        # a = -1*int(self.N/2)
+        # b = int(self.N/2)
+        # wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_shade_faces_solid_color")  # Front left wall
+        # wall2 = Wall(points=[(i,  b-1) for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back right wall
+        # wall3 = Wall(points=[(a,  i)   for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back left wall
+        # wall4 = Wall(points=[(b-1,i)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front right wall
+        # walls = [wall1, wall2, wall3, wall4]
 
+        a = self.game.tile_map.a
+        b = self.game.tile_map.b
+        walls = self.game.tile_map.walls
         # Decrement y values so that the draw order is correct for how I am
         # drawing voxels: I have to draw the ones "behind" first.
         for j in range(b,a-1,-1):
             for i in range(a,b):
                 G = (i,j)
-                # if G in walls:
-                #     height = random.choice(list(range(25,30)))
-                #     grid_points = [(G[0]  ,G[1]  ),
-                #                    (G[0]+1,G[1]  ),
-                #                    (G[0]+1,G[1]+1),
-                #                    (G[0]  ,G[1]+1)]
-                #     voxel_artwork.append([grid_points,height])
                 for wall in walls:
                     if G in wall.points:
                         height = random.choice(list(range(wall.height,wall.height+5)))
@@ -269,7 +316,9 @@ class Game:
 
         # Game Data
         self.grid = Grid(self, N=50)
-        self.voxel_artwork = VoxelArtwork(self, N=self.grid.N)
+        self.tile_map = TileMap(N=self.grid.N)
+        self.voxel_artwork = VoxelArtwork(self)
+        self.player = Player(self)
 
         # FPS
         self.clock = pygame.time.Clock()
@@ -296,7 +345,8 @@ class Game:
         # Draw grid
         self.grid.draw(self.surfs['surf_game_art'])
 
-        self.render_player()
+        # self.render_player()
+        self.player.render(self.surfs['surf_game_art'])
 
         # Display mouse coordinates in game grid coordinate system
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
@@ -383,7 +433,7 @@ class Game:
         # Randomize voxel artwork if Space is held
         if self.keys['key_Space']:
             # self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
-            self.voxel_artwork.layout = self.voxel_artwork.make_specific_layout()
+            self.voxel_artwork.layout = self.voxel_artwork.make_voxels_from_tile_map()
         # Update transform based on key presses
         # U = 20; L = -20                                 # Upper/Lower bounds
         # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
@@ -458,10 +508,24 @@ class Game:
             case pygame.K_DOWN:
                 self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
             # TEMPORARY player movement
-            case pygame.K_j: logger.debug("Move Down")
-            case pygame.K_k: logger.debug("Move Up")
-            case pygame.K_h: logger.debug("Move Left")
-            case pygame.K_l: logger.debug("Move Right")
+            # TODO: when player moves next to a wall, figure out whether
+            # player is behind or in front and render player appropriately.
+            case pygame.K_j:
+                pos = self.player.pos
+                self.player.pos = (pos[0],pos[1] - 1)
+                logger.debug("Move Down")
+            case pygame.K_k:
+                pos = self.player.pos
+                self.player.pos = (pos[0],pos[1] + 1)
+                logger.debug("Move Up")
+            case pygame.K_h:
+                pos = self.player.pos
+                self.player.pos = (pos[0] - 1 , pos[1])
+                logger.debug("Move Left")
+            case pygame.K_l:
+                pos = self.player.pos
+                self.player.pos = (pos[0] + 1 , pos[1])
+                logger.debug("Move Right")
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
@@ -530,32 +594,6 @@ class Game:
                 #       'A' prints "a"        '1' prints "1"
                 # 'Shift+A' prints "A"  'Shift+1' prints "!"
                 logger.debug(f"{event.unicode}")
-
-    def render_player(self) -> None:
-        """Display the player."""
-        # TODO: make this a class to keep track of its position, then add movement controls
-        G = (0,0)                                       # TEMPORARY: hardcode player position
-        percentage = 0.5                                # Player fills half the tile
-        p = 1-percentage
-        d = p/2
-        wiggle = 0.5                                    # Amount to randomize each coordinate value
-        Gs = [ # Define a polygon on the grid
-              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
-              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
-              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d)),
-              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d))]
-        # Center of tile
-        Gc =  (G[0] + 0.5   + random.uniform(-0.5*d, 0.5*d), G[1] + 0.5  + random.uniform(-0.5*d, 0.5*d))
-        # Convert to pixel coordinates
-        points = [self.grid.xfm_gp(G) for G in Gs]
-        Pc = self.grid.xfm_gp(Gc)
-        # Elevate that center point
-        height = 10
-        center = (Pc[0], Pc[1] - height*self.grid.scale)
-        # pygame.draw.polygon(self.surfs['surf_game_art'],Color(100,255,100), points)
-        ### line(surface, color, start_pos, end_pos) -> Rect
-        for p in points:
-            pygame.draw.line(self.surfs['surf_game_art'], self.colors['color_grid_y_axis'], p, center)
 
     def render_mouse_location(self) -> None:
         """Display mouse location with a white, transparent, hollow circle."""
