@@ -21,6 +21,14 @@
     * Player traverses small height differences
     * Player is only blocked when height difference exceeds some amount
 [ ] Include spell casting
+    * [x] ':' to start spell casting
+    * [x] keystrokes appear at bottom of screen
+    * [x] romanized chars appear above character's head
+    * [x] adjust size of romanized chars
+    * [ ] Fix romanized chars location -- center above player's head
+    * [ ] start a newline if romanized chars extend too far
+    * [ ] make color of romanized chars adjustable
+    * [ ] add more characters (Kurt added letter 'z')
 """
 
 import sys
@@ -28,11 +36,12 @@ import atexit
 from pathlib import Path
 from dataclasses import dataclass
 import random
+import json
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"          # Set pygame env var to hide "Hello" msg
 import pygame
 from pygame import Color
-from libs.utils import setup_logging, OsWindow, Text, DebugHud, HelpHud
+from libs.utils import setup_logging, load_image, OsWindow, Text, DebugHud, HelpHud
 
 def shutdown() -> None:
     if logger: logger.info("Shutdown")
@@ -55,6 +64,12 @@ def define_surfaces(os_window:OsWindow) -> dict:
     # Blend artwork on the game art surface.
     # This is the final surface that is  copied to the OS Window.
     surfs['surf_game_art'] = pygame.Surface(os_window.size, flags=pygame.SRCALPHA)
+
+    # Temporary drawing surface -- draw on this, blit the drawn portion, then clear this.
+    surfs['surf_draw'] = pygame.Surface(surfs['surf_game_art'].get_size(), flags=pygame.SRCALPHA)
+
+    # This surface is populated later when Game instantiates RomanizedChars
+    surfs['surf_romanized_chars'] = None
 
     return surfs
 
@@ -92,6 +107,7 @@ def define_keys() -> dict:
 
 def define_colors() -> dict:
     colors = {}
+    colors['color_clear'] = Color(0,0,0,0)
     colors['color_debug_hud'] = Color(255,255,255,255)
     colors['color_help_hud'] = Color(200,150,100,255)
     # colors['color_debug_keystrokes'] = Color(80,130,80)
@@ -144,6 +160,7 @@ class Player:
     def __init__(self, game):
         self.game = game
         self.pos = (9.0,2.0)
+        self.height = 10
         self.speed_walk = 0.2
         self.speed_rise = 3.0
         self.wiggle = 0.1                               # Amount to randomize each coordinate value
@@ -225,8 +242,7 @@ class Player:
         points = [(p[0],p[1] + self.z) for p in points]
         Pc = (Pc[0], Pc[1] + self.z)
         # Elevate that center point
-        height = 10
-        center = (Pc[0], Pc[1] - height*self.game.grid.scale)
+        center = (Pc[0], Pc[1] - self.height*self.game.grid.scale)
         # Draw player dress
         ### polygon(surface, color, points) -> Rect
         color = Color(self.game.colors['color_grid_y_axis'])
@@ -241,8 +257,72 @@ class Player:
         ### circle(surface, color, center, radius, width=0, draw_top_right=None, draw_top_left=None, draw_bottom_left=None, draw_bottom_right=None) -> Rect
         pygame.draw.circle(surf, Color(0,0,0), center, 2*self.game.grid.scale)
 
-    def render_keystrokes(self, surf:pygame.Surface) -> None:
-        pass
+    def render_romanized_chars(self, surf:pygame.Surface) -> None:
+        """Render romanized chars above the player's head."""
+        # Get the number of chars to render
+        nchars = 0
+        for letter in self.keystrokes:
+            if letter in self.game.romanized_chars.letters:
+                nchars += 1
+
+        # Get the width and height of the complete image for all keystrokes thus far
+        img_w = nchars*self.game.romanized_chars.size[0]
+        img_h = self.game.romanized_chars.size[1]
+
+        # TODO: Scale the image
+        k = 0.5
+        scaled_img_w = img_w*k
+        scaled_img_h = img_h*k
+
+        # Position the chars centered above the player's head
+        pos = self.game.grid.xfm_gp(self.pos)           #  Convert player pos to pixel coordinates
+        start = (pos[0] - img_w/2, pos[1] - img_h - self.height*self.game.grid.scale)
+        # start = (pos[0] - scaled_img_w/2, pos[1] - scaled_img_h - self.height*self.game.grid.scale)
+
+        offset = (0,0)                                  # Offset next letter from start position
+        for letter in self.keystrokes:
+            if letter in self.game.romanized_chars.letters:
+                # Look up index of this letter
+                index = self.game.romanized_chars.letters[letter]
+                # Blit letter art at that index
+                ### blit(source, dest, area=None, special_flags=0) -> Rect
+                # surf.blit(self.game.surfs['surf_romanized_chars'],
+                self.game.surfs['surf_draw'].blit(self.game.surfs['surf_romanized_chars'],
+                    (start[0] + offset[0], start[1] + offset[1]),
+                    area=pygame.Rect(
+                        (index*self.game.romanized_chars.size[0],0),
+                        self.game.romanized_chars.size
+                        ))
+                # Increment x-position for next letter
+                offset = (offset[0]+self.game.romanized_chars.size[0], offset[1])
+
+        # Scale temporary drawing surface before blitting to game art
+        size = self.game.surfs['surf_draw'].get_size()
+        size = (size[0]*k, size[1]*k)
+        smooth = True  # I can't tell a difference in smoothness or performance
+        if smooth:
+            ### smoothscale(surface, size, dest_surface=None) -> Surface
+            surf_chars = pygame.transform.smoothscale(self.game.surfs['surf_draw'], size)
+        else:
+            ### scale(surface, size, dest_surface=None) -> Surface
+            surf_chars = pygame.transform.scale(self.game.surfs['surf_draw'], size)
+
+        rect = pygame.Rect( (start[0] - img_w/2, start[1] - img_h/2),
+                            (start[0] + img_w/2, start[1] + img_h/2))
+        # Clean
+        self.game.surfs['surf_draw'].fill(self.game.colors['color_clear'], rect=rect)
+
+        # Scale area rect by k to match scaling of the temporary drawing surface
+        rect = pygame.Rect( (k*(start[0] - img_w/2), k*(start[1] - img_h/2)),
+                            (k*(start[0] + img_w/2), k*(start[1] + img_h/2)))
+
+        # Blit to game art
+        surf.blit(surf_chars, # self.game.surfs['surf_draw'],
+                    (start[0] - img_w/2, start[1] - img_h/2),
+                    area=rect,
+                    special_flags=pygame.BLEND_ALPHA_SDL2
+                  )
+
 
 # TODO: Move this out to a level editor later
 class TileMap:
@@ -475,6 +555,33 @@ class VoxelArtwork:
                 case _:
                     pass
 
+class RomanizedChars:
+    def __init__(self, game):
+        self.game = game
+        # Display romanized chars by pulling Rects from an Aseprite spritesheet
+        romanized_chars_spritesheet_path = Path('../spells/data/images/romanized_chars.png')
+        # Load a pygame Surface with the spritesheet .png
+        self.game.surfs['surf_romanized_chars'] = load_image(romanized_chars_spritesheet_path).convert()
+        self.name = romanized_chars_spritesheet_path.stem
+
+        # Extract JSON data fromm Aseprite JSON export
+        romanized_chars_json_path = romanized_chars_spritesheet_path.with_suffix('.json')
+        with open(romanized_chars_json_path) as fp:
+            romanized_chars_data = json.load(fp)
+
+        # Extract w,h from JSON data
+        layer_name = f'{self.name}'                     # Layer name in Aseprite JSON
+        a_romanized_char = romanized_chars_data['frames'][f'{layer_name} 0.aseprite']['frame']
+        self.size = (a_romanized_char['w'], a_romanized_char['h'])
+
+        # Extract letter locations from JSON data
+        self.letters = {}                               # Dict of romanized chars
+        for letter_tag in romanized_chars_data['meta']['frameTags']:
+            # Create a dictionary: key = letter name, value = letter index
+            ### {'f': 0, 'k': 1, 'u': 2, 't': 3, ...}
+            self.letters[letter_tag['name']]=letter_tag['from']
+        logger.debug(f"{self.letters}")
+
 class Game:
     def __init__(self):
         pygame.init()                                   # Init pygame -- quit in shutdown
@@ -500,6 +607,7 @@ class Game:
         self.gravity = 0.5
         self.max_fall_speed = 15.0
         self.player = Player(self)
+        self.romanized_chars = RomanizedChars(self)
 
         # FPS
         self.clock = pygame.time.Clock()
@@ -562,7 +670,7 @@ class Game:
         # Display typing text while casting
         if self.player.is_casting:
             # Display romanized chars above player if spell casting
-            self.player.render_keystrokes(self.surfs['surf_game_art'])
+            self.player.render_romanized_chars(self.surfs['surf_game_art'])
             # Display keystrokes at bottom of screen in debug font
             self.render_debug_keystrokes(self.surfs['surf_game_art'])
 

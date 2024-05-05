@@ -5,6 +5,7 @@
 
 import sys
 import logging
+from pathlib import Path
 import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"          # Set pygame env var to hide "Hello" msg
 import pygame
@@ -48,6 +49,14 @@ def setup_logging(loglevel:str="DEBUG") -> logging.Logger:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
     return logger
+
+def load_image(image_file:Path) -> pygame.Surface:
+    """
+    image_path: relative to game root folder, type can also be str
+    """
+    img = pygame.image.load(image_file).convert()
+    img.set_colorkey((0,0,0))                           # Treat black as transparent
+    return img
 
 class OsWindow:
     """OS window information.
