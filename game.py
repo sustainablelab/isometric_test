@@ -11,6 +11,8 @@
 [x] Draw a shadow under the player
 [x] Draw a floor
     [ ] Give floor same color gradient effect that I put on the grid
+[x] Add a Help HUD
+[x] If Debug HUD is visible, show Help HUD below Debug HUD
 [ ] Put player on top of a wall
 [ ] Pan with mouse
 [ ] Save game data
@@ -18,6 +20,7 @@
 [ ] Improved collision detection using height:
     * Player traverses small height differences
     * Player is only blocked when height difference exceeds some amount
+[ ] Include spell casting
 """
 
 import sys
@@ -29,7 +32,7 @@ import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"          # Set pygame env var to hide "Hello" msg
 import pygame
 from pygame import Color
-from libs.utils import setup_logging, DebugHud, OsWindow
+from libs.utils import setup_logging, OsWindow, Text, DebugHud, HelpHud
 
 def shutdown() -> None:
     if logger: logger.info("Shutdown")
@@ -90,6 +93,9 @@ def define_keys() -> dict:
 def define_colors() -> dict:
     colors = {}
     colors['color_debug_hud'] = Color(255,255,255,255)
+    colors['color_help_hud'] = Color(200,150,100,255)
+    # colors['color_debug_keystrokes'] = Color(80,130,80)
+    colors['color_debug_keystrokes'] = Color(200,200,200)
     colors['color_game_art_bgnd'] = Color(40,40,40,255)
     colors['color_grid_lines'] =     Color(100,100,250,255)
     colors['color_vertical_lines'] = Color(150,150,250,255)
@@ -106,6 +112,7 @@ def define_colors() -> dict:
 
 def define_settings() -> dict:
     settings = {}
+    settings['setting_show_help'] = True
     settings['setting_debug'] = False
     return settings
 
@@ -143,6 +150,9 @@ class Player:
         self.moving = False
         self.z = 0                                      # Position in z-direction
         self.dz = 0                                     # Speed in z-direction
+        self.is_casting = False
+        self.spell = ""
+        self.keystrokes = ""
 
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
@@ -230,6 +240,9 @@ class Player:
         # Draw player head
         ### circle(surface, color, center, radius, width=0, draw_top_right=None, draw_top_left=None, draw_bottom_left=None, draw_bottom_right=None) -> Rect
         pygame.draw.circle(surf, Color(0,0,0), center, 2*self.game.grid.scale)
+
+    def render_keystrokes(self, surf:pygame.Surface) -> None:
+        pass
 
 # TODO: Move this out to a level editor later
 class TileMap:
@@ -482,8 +495,6 @@ class Game:
 
         # Game Data
         self.grid = Grid(self, N=50)
-        # TODO: calculate the "zoom to fit" scale, don't hardcode it
-        self.grid.scale = 2.2                           # Zoom in to fill a 1920 x 1080 window
         self.tile_map = TileMap(N=self.grid.N)
         self.voxel_artwork = VoxelArtwork(self)
         self.gravity = 0.5
@@ -547,13 +558,55 @@ class Game:
             e,f = (self.grid.e, self.grid.f)
             self.debug_hud.add_text(f"a: {a:0.1f} | b: {b:0.1f} | c: {c:0.1f} | d: {d:0.1f} | e: {e:0.1f} | f: {f:0.1f}")
 
+        ### TEMPORARY: spell casting
+        # Display typing text while casting
+        if self.player.is_casting:
+            # Display romanized chars above player if spell casting
+            self.player.render_keystrokes(self.surfs['surf_game_art'])
+            # Display keystrokes at bottom of screen in debug font
+            self.render_debug_keystrokes(self.surfs['surf_game_art'])
+
+
         # Copy game art to OS window
         ### blit(source, dest, area=None, special_flags=0) -> Rect
         self.surfs['surf_os_window'].blit(self.surfs['surf_game_art'], (0,0))
 
+        ### TEMPORARY: spell casting
+        # DEBUG: What spell is cast?
+        if self.debug_hud:
+            if self.player.spell != "":
+                self.debug_hud.add_text(f"Cast: {self.player.spell}")
+
         # Display Debug HUD overlay
         if self.debug_hud:
             self.debug_hud.render(self.colors['color_debug_hud'])
+
+        # Display HELP below DEBUG
+        if self.settings['setting_show_help']:
+            self.help_hud = HelpHud(self)
+            self.help_hud.add_text("View:")
+            self.help_hud.add_text("  - Mouse wheel: zoom")
+            self.help_hud.add_text("  - 'e,f,E,F': pan camera")
+            self.help_hud.add_text("  - 'a,b,c,d,A,B,C,D': manipulate Xfm")
+            self.help_hud.add_text("  - 'r': reset view")
+            self.help_hud.add_text("Player:")
+            self.help_hud.add_text("  - 'Left-click': place player")
+            self.help_hud.add_text("  - 'Space': levitate player")
+            self.help_hud.add_text("Movement:")
+            self.help_hud.add_text("  - 'j,k': player down/up (Shift: nudge)")
+            self.help_hud.add_text("  - 'h,l': player left/right (Shift: nudge)")
+            self.help_hud.add_text("SPELLCASTING")
+            if self.player.is_casting:
+                self.help_hud.add_text("  - (Type stuff)")
+                self.help_hud.add_text("  - 'Backspace': unspeak last?")
+                self.help_hud.add_text("  - 'Esc': cancel casting")
+                self.help_hud.add_text("  - 'Enter': cast")
+            else:
+                self.help_hud.add_text("  - ':': start casting")
+            if self.debug_hud:
+                # Bump HelpHud down below the DebugHUD
+                self.help_hud.text.pos = (0,len(self.debug_hud.text.text_lines)*self.debug_hud.text.font.get_linesize())
+            self.help_hud.render(self.colors['color_help_hud'])
 
         # Draw to the OS window
         pygame.display.update()
@@ -732,185 +785,231 @@ class Game:
 
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
-        match event.key:
-            case pygame.K_LSHIFT:
-                if self.keys['key_Shift_Space']:
+        if not self.player.is_casting:
+            match event.key:
+                case pygame.K_LSHIFT:
+                    if self.keys['key_Shift_Space']:
+                        self.keys['key_Shift_Space'] = False
+                    if self.keys['key_A']:
+                        self.keys['key_A'] = False
+                    if self.keys['key_B']:
+                        self.keys['key_B'] = False
+                    if self.keys['key_C']:
+                        self.keys['key_C'] = False
+                    if self.keys['key_D']:
+                        self.keys['key_D'] = False
+                    if self.keys['key_E']:
+                        self.keys['key_E'] = False
+                    if self.keys['key_F']:
+                        self.keys['key_F'] = False
+                case pygame.K_SPACE:
+                    self.keys['key_Space'] = False
                     self.keys['key_Shift_Space'] = False
-                if self.keys['key_A']:
+                case pygame.K_a:
                     self.keys['key_A'] = False
-                if self.keys['key_B']:
+                    self.keys['key_a'] = False
+                case pygame.K_b:
                     self.keys['key_B'] = False
-                if self.keys['key_C']:
+                    self.keys['key_b'] = False
+                case pygame.K_c:
                     self.keys['key_C'] = False
-                if self.keys['key_D']:
+                    self.keys['key_c'] = False
+                case pygame.K_d:
                     self.keys['key_D'] = False
-                if self.keys['key_E']:
+                    self.keys['key_d'] = False
+                case pygame.K_e:
                     self.keys['key_E'] = False
-                if self.keys['key_F']:
+                    self.keys['key_e'] = False
+                case pygame.K_f:
                     self.keys['key_F'] = False
-            case pygame.K_SPACE:
-                self.keys['key_Space'] = False
-                self.keys['key_Shift_Space'] = False
-            case pygame.K_a:
-                self.keys['key_A'] = False
-                self.keys['key_a'] = False
-            case pygame.K_b:
-                self.keys['key_B'] = False
-                self.keys['key_b'] = False
-            case pygame.K_c:
-                self.keys['key_C'] = False
-                self.keys['key_c'] = False
-            case pygame.K_d:
-                self.keys['key_D'] = False
-                self.keys['key_d'] = False
-            case pygame.K_e:
-                self.keys['key_E'] = False
-                self.keys['key_e'] = False
-            case pygame.K_f:
-                self.keys['key_F'] = False
-                self.keys['key_f'] = False
-            # TEMPORARY: player movement
-            case pygame.K_j: # Move Down
-                self.keys['key_j'] = False
-            case pygame.K_k: # Move Up
-                self.keys['key_k'] = False
-            case pygame.K_h: # Move Left
-                self.keys['key_h'] = False
-            case pygame.K_l: # Move Right
-                self.keys['key_l'] = False
-            case _:
-                pass
+                    self.keys['key_f'] = False
+                # TEMPORARY: player movement
+                case pygame.K_j: # Move Down
+                    self.keys['key_j'] = False
+                case pygame.K_k: # Move Up
+                    self.keys['key_k'] = False
+                case pygame.K_h: # Move Left
+                    self.keys['key_h'] = False
+                case pygame.K_l: # Move Right
+                    self.keys['key_l'] = False
+                case _:
+                    pass
 
     def handle_keydown(self, event) -> None:
         kmod = pygame.key.get_mods()                    # Which modifier keys are held
-        match event.key:
-            case pygame.K_q: sys.exit()                 # q - Quit
-            case pygame.K_F2:                           # F2 - Toggle Debug
-                self.settings['setting_debug'] = not self.settings['setting_debug']
-            # TEMPORARY adjust percentage that voxels cover tiles
-            case pygame.K_UP:
-                self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
-            case pygame.K_DOWN:
-                self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
-            case pygame.K_r:
-                # Reset view back to initial view after changing Xfm matrix values (a,b,c,d,e,f,zoom)
-                self.grid.reset()
-            case pygame.K_z:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.grid.zoom_in()
-                else:
-                    self.grid.zoom_out()
-            # TEMPORARY player movement
-            # case pygame.K_j:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0],pos[1] - 1)
-            #     logger.debug("Move Down")
-            # case pygame.K_k:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0],pos[1] + 1)
-            #     logger.debug("Move Up")
-            # case pygame.K_h:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0] - 1 , pos[1])
-            #     logger.debug("Move Left")
-            # case pygame.K_l:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0] + 1 , pos[1])
-            #     logger.debug("Move Right")
-            # TEMPORARY: Print name of keys that have no unicode representation.
-            case pygame.K_RETURN: logger.debug("Return")
-            case pygame.K_ESCAPE: logger.debug("Esc")
-            case pygame.K_BACKSPACE: logger.debug("Backspace")
-            case pygame.K_DELETE: logger.debug("Delete")
-            case pygame.K_F1: logger.debug("F1")
-            case pygame.K_F3: logger.debug("F3")
-            case pygame.K_F4: logger.debug("F4")
-            case pygame.K_F5: logger.debug("F5")
-            case pygame.K_F6: logger.debug("F6")
-            case pygame.K_F7: logger.debug("F7")
-            case pygame.K_F8: logger.debug("F8")
-            case pygame.K_F9: logger.debug("F9")
-            case pygame.K_F10: logger.debug("F10")
-            case pygame.K_F11: logger.debug("F11")
-            case pygame.K_F12: logger.debug("F12")
-            case pygame.K_LSHIFT: logger.debug("Left Shift")
-            case pygame.K_RSHIFT: logger.debug("Right Shift")
-            case pygame.K_LALT: logger.debug("Left Alt")
-            case pygame.K_RALT: logger.debug("Right Alt")
-            case pygame.K_LCTRL: logger.debug("Left Ctrl")
-            case pygame.K_RCTRL: logger.debug("Right Ctrl")
-            case pygame.K_SPACE:
-                if kmod & pygame.KMOD_SHIFT:
-                    # TEMPORARY randomize voxel artwork
-                    self.keys['key_Shift_Space'] = True
-                else:
-                    # TEMPORARY levitate player
-                    self.keys['key_Space'] = True
-            # TEMPORARY manipulate the xfm matrix
-            case pygame.K_a:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_A'] = True
-                else:
-                    self.keys['key_a'] = True
-            case pygame.K_b:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_B'] = True
-                else:
-                    self.keys['key_b'] = True
-            case pygame.K_c:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_C'] = True
-                else:
-                    self.keys['key_c'] = True
-            case pygame.K_d:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_D'] = True
-                else:
-                    self.keys['key_d'] = True
-            case pygame.K_e:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_E'] = True
-                else:
-                    self.keys['key_e'] = True
-            case pygame.K_f:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_F'] = True
-                else:
-                    self.keys['key_f'] = True
-            # TEMPORARY: player movement
-            case pygame.K_j: # Move Down
-                if kmod & pygame.KMOD_SHIFT:
-                    # 'Shift+J' nudges player
-                    pos = self.player.pos
-                    self.player.pos = (pos[0],                      pos[1] - self.player.speed_walk)
-                else:
-                    self.keys['key_j'] = True
-            case pygame.K_k: # Move Up
-                if kmod & pygame.KMOD_SHIFT:
-                    # 'Shift+K' nudges player
-                    pos = self.player.pos
-                    self.player.pos = (pos[0],                      pos[1] + self.player.speed_walk)
-                else:
-                    self.keys['key_k'] = True
-            case pygame.K_h: # Move Left
-                if kmod & pygame.KMOD_SHIFT:
-                    # 'Shift+H' nudges player
-                    pos = self.player.pos
-                    self.player.pos = (pos[0] - self.player.speed_walk,  pos[1])
-                else:
-                    self.keys['key_h'] = True
-            case pygame.K_l: # Move Right
-                if kmod & pygame.KMOD_SHIFT:
-                    # 'Shift+L' nudges player
-                    pos = self.player.pos
-                    self.player.pos = (pos[0] + self.player.speed_walk,  pos[1])
-                else:
-                    self.keys['key_l'] = True
-            case _:
-                # Print unicode for the pressed key or key combo:
-                #       'A' prints "a"        '1' prints "1"
-                # 'Shift+A' prints "A"  'Shift+1' prints "!"
-                logger.debug(f"{event.unicode}")
+        if self.player.is_casting:
+            match event.key:
+                case pygame.K_RETURN:
+                    # Cast this spell
+                    self.player.spell = self.player.keystrokes.lstrip(":")
+                    self.player.keystrokes = ""
+                    self.player.is_casting = False
+                case pygame.K_ESCAPE:
+                    # Abort casting
+                    self.player.keystrokes = ""
+                    self.player.is_casting = False
+                case pygame.K_BACKSPACE:
+                    self.player.keystrokes = self.player.keystrokes[0:-1]
+                case pygame.K_a:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.player.keystrokes += 'á'
+                    else:
+                        self.player.keystrokes += event.unicode
+                case pygame.K_e:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.player.keystrokes += 'é'
+                    else:
+                        self.player.keystrokes += event.unicode
+                case pygame.K_c:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.player.keystrokes += 'ċ'
+                    else:
+                        self.player.keystrokes += event.unicode
+                case pygame.K_l:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.player.keystrokes += 'L' # 'ļ' json.decoder.JSONDecodeError: Invalid control character
+                    elif kmod & pygame.KMOD_ALT:
+                        self.player.keystrokes += 'T' # 'ł' json.decoder.JSONDecodeError: Invalid control character
+                    else:
+                        self.player.keystrokes += event.unicode
+                case _:
+                    self.player.keystrokes += event.unicode            # Append key-stroke
+                    logger.debug(f"self.player.keystrokes: {self.player.keystrokes}")
+                    # if event.unicode in self.romanized_chars_letters:
+                    #     self.letter = self.romanized_chars_letters[event.unicode]
+        else:
+            match event.key:
+                case pygame.K_q: sys.exit()                 # q - Quit
+                case pygame.K_SEMICOLON:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.player.is_casting = True
+                case pygame.K_F1:
+                    self.settings['setting_show_help'] = not self.settings['setting_show_help']
+                case pygame.K_F2:                           # F2 - Toggle Debug
+                    self.settings['setting_debug'] = not self.settings['setting_debug']
+                # TEMPORARY adjust percentage that voxels cover tiles
+                case pygame.K_UP:
+                    self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
+                case pygame.K_DOWN:
+                    self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
+                case pygame.K_r:
+                    # Reset view back to initial view after changing Xfm matrix values (a,b,c,d,e,f,zoom)
+                    self.grid.reset()
+                case pygame.K_z:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.grid.zoom_in()
+                    else:
+                        self.grid.zoom_out()
+                # TEMPORARY player movement
+                # case pygame.K_j:
+                #     pos = self.player.pos
+                #     self.player.pos = (pos[0],pos[1] - 1)
+                #     logger.debug("Move Down")
+                # case pygame.K_k:
+                #     pos = self.player.pos
+                #     self.player.pos = (pos[0],pos[1] + 1)
+                #     logger.debug("Move Up")
+                # case pygame.K_h:
+                #     pos = self.player.pos
+                #     self.player.pos = (pos[0] - 1 , pos[1])
+                #     logger.debug("Move Left")
+                # case pygame.K_l:
+                #     pos = self.player.pos
+                #     self.player.pos = (pos[0] + 1 , pos[1])
+                #     logger.debug("Move Right")
+                # TEMPORARY: Print name of keys that have no unicode representation.
+                case pygame.K_RETURN: logger.debug("Return")
+                case pygame.K_ESCAPE: logger.debug("Esc")
+                case pygame.K_BACKSPACE: logger.debug("Backspace")
+                case pygame.K_DELETE: logger.debug("Delete")
+                case pygame.K_F3: logger.debug("F3")
+                case pygame.K_F4: logger.debug("F4")
+                case pygame.K_F5: logger.debug("F5")
+                case pygame.K_F6: logger.debug("F6")
+                case pygame.K_F7: logger.debug("F7")
+                case pygame.K_F8: logger.debug("F8")
+                case pygame.K_F9: logger.debug("F9")
+                case pygame.K_F10: logger.debug("F10")
+                case pygame.K_F11: logger.debug("F11")
+                case pygame.K_F12: logger.debug("F12")
+                case pygame.K_LSHIFT: logger.debug("Left Shift")
+                case pygame.K_RSHIFT: logger.debug("Right Shift")
+                case pygame.K_LALT: logger.debug("Left Alt")
+                case pygame.K_RALT: logger.debug("Right Alt")
+                case pygame.K_LCTRL: logger.debug("Left Ctrl")
+                case pygame.K_RCTRL: logger.debug("Right Ctrl")
+                case pygame.K_SPACE:
+                    if kmod & pygame.KMOD_SHIFT:
+                        # TEMPORARY randomize voxel artwork
+                        self.keys['key_Shift_Space'] = True
+                    else:
+                        # TEMPORARY levitate player
+                        self.keys['key_Space'] = True
+                # TEMPORARY manipulate the xfm matrix
+                case pygame.K_a:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.keys['key_A'] = True
+                    else:
+                        self.keys['key_a'] = True
+                case pygame.K_b:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.keys['key_B'] = True
+                    else:
+                        self.keys['key_b'] = True
+                case pygame.K_c:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.keys['key_C'] = True
+                    else:
+                        self.keys['key_c'] = True
+                case pygame.K_d:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.keys['key_D'] = True
+                    else:
+                        self.keys['key_d'] = True
+                case pygame.K_e:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.keys['key_E'] = True
+                    else:
+                        self.keys['key_e'] = True
+                case pygame.K_f:
+                    if kmod & pygame.KMOD_SHIFT:
+                        self.keys['key_F'] = True
+                    else:
+                        self.keys['key_f'] = True
+                # TEMPORARY: player movement
+                case pygame.K_j: # Move Down
+                    if kmod & pygame.KMOD_SHIFT:
+                        # 'Shift+J' nudges player
+                        pos = self.player.pos
+                        self.player.pos = (pos[0],                      pos[1] - self.player.speed_walk)
+                    else:
+                        self.keys['key_j'] = True
+                case pygame.K_k: # Move Up
+                    if kmod & pygame.KMOD_SHIFT:
+                        # 'Shift+K' nudges player
+                        pos = self.player.pos
+                        self.player.pos = (pos[0],                      pos[1] + self.player.speed_walk)
+                    else:
+                        self.keys['key_k'] = True
+                case pygame.K_h: # Move Left
+                    if kmod & pygame.KMOD_SHIFT:
+                        # 'Shift+H' nudges player
+                        pos = self.player.pos
+                        self.player.pos = (pos[0] - self.player.speed_walk,  pos[1])
+                    else:
+                        self.keys['key_h'] = True
+                case pygame.K_l: # Move Right
+                    if kmod & pygame.KMOD_SHIFT:
+                        # 'Shift+L' nudges player
+                        pos = self.player.pos
+                        self.player.pos = (pos[0] + self.player.speed_walk,  pos[1])
+                    else:
+                        self.keys['key_l'] = True
+                case _:
+                    # Print unicode for the pressed key or key combo:
+                    #       'A' prints "a"        '1' prints "1"
+                    # 'Shift+A' prints "A"  'Shift+1' prints "!"
+                    logger.debug(f"{event.unicode}")
 
     def render_mouse_location(self) -> None:
         """Display mouse location with a white, transparent, hollow circle."""
@@ -955,6 +1054,17 @@ class Game:
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_left'], voxel_Ls)
         pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_voxel_right'], voxel_Rs)
 
+    def render_debug_keystrokes(self, surf:pygame.Surface) -> None:
+        """Show keystrokes in debug font at bottom of screen"""
+        # Render keystrokes
+        keystrokes = Text((0,0), font_size=20, sys_font="Roboto Mono")
+        ### pygame.Surface.get_height() -> height
+        ### pygame.font.Font.get_height() -> int
+        keystrokes.pos = (surf.get_width()/2, surf.get_height() - keystrokes.font.get_height())
+        cmdline = ":"
+        keystrokes.update(cmdline + self.player.keystrokes)
+        keystrokes.render(surf, self.colors['color_debug_keystrokes'])
+
 class Grid:
     """Define a grid of lines.
 
@@ -993,6 +1103,8 @@ class Grid:
                int(self.game.os_window.size[1]/2)+60)
         self._e = ctr[0]
         self._f = ctr[1]
+        # TODO: calculate the "zoom to fit" scale, don't hardcode it
+        self.scale = 2.2                           # Zoom in to fill a 1920 x 1080 window
 
     @property
     def a(self) -> float:
