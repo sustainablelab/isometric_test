@@ -5,7 +5,17 @@
 [x] Draw a marker at (0,0) and (N,N) to make sure the xfms are correct
 [x] Draw some placeholder wireframe art to represent the player character
 [x] Implement keyboard movement of player character
-[ ] Collision detection between player and walls
+[x] Collision detection between player and walls
+[x] Add gravity to player
+[x] Add player levitation (infinite jump)
+[ ] Put player on top of a wall
+[ ] Draw a floor
+[ ] Pan with mouse
+[ ] Save game data
+[ ] Load game data
+[ ] Improved collision detection using height:
+    * Player traverses small height differences
+    * Player is only blocked when height difference exceeds some amount
 """
 
 import sys
@@ -54,6 +64,7 @@ def define_keys() -> dict:
     keys = {}
     # Special
     keys['key_Space'] = False
+    keys['key_Shift_Space'] = False
     # Xfm matrix
     keys['key_A'] = False
     keys['key_a'] = False
@@ -120,9 +131,12 @@ class Player:
     def __init__(self, game):
         self.game = game
         self.pos = (9.0,2.0)
-        self.speed = 0.2
+        self.speed_walk = 0.2
+        self.speed_rise = 3.0
         self.wiggle = 0.1                               # Amount to randomize each coordinate value
         self.moving = False
+        self.z = 0
+        self.dz = 0
 
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
@@ -147,11 +161,14 @@ class Player:
               (G[0] + 1 - d + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 1 -d + random.uniform(-1*self.wiggle*d, self.wiggle*d)),
               (G[0] + d     + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 1 -d + random.uniform(-1*self.wiggle*d, self.wiggle*d))]
         # Center of tile
-        # TODO: if moving, push center in direction of motion
+        # TODO: if moving, push center (player head) in direction of motion
         Gc =  (G[0] + 0.5   + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 0.5  + random.uniform(-1*self.wiggle*d, self.wiggle*d))
         # Convert to pixel coordinates
         points = [self.game.grid.xfm_gp(G) for G in Gs]
         Pc = self.game.grid.xfm_gp(Gc)
+        # Incorporate player height:
+        points = [(p[0],p[1] + self.z) for p in points]
+        Pc = (Pc[0], Pc[1] + self.z)
         # Elevate that center point
         height = 10
         center = (Pc[0], Pc[1] - height*self.game.grid.scale)
@@ -355,7 +372,7 @@ class VoxelArtwork:
         if self.game.debug_hud:
             self.game.debug_hud.add_text(
                     f"player_voxel_index: i={player_voxel_index}, "
-                    f"player.pos: ({player.pos[0]:.1f},{player.pos[1]:.1f})")
+                    f"player.pos: ({player.pos[0]:.1f},{player.pos[1]:.1f},z={player.z:.1f})")
 
         # Convert each voxel to pixel coordinates and render
         for i,voxel in enumerate(voxels):
@@ -424,6 +441,8 @@ class Game:
         self.grid.scale = 2.2                           # Zoom in to fill a 1920 x 1080 window
         self.tile_map = TileMap(N=self.grid.N)
         self.voxel_artwork = VoxelArtwork(self)
+        self.gravity = 0.5
+        self.max_fall_speed = 15.0
         self.player = Player(self)
 
         # FPS
@@ -449,7 +468,10 @@ class Game:
         self.surfs['surf_game_art'].fill(self.colors['color_game_art_bgnd'])
 
         # Draw grid
-        self.grid.draw(self.surfs['surf_game_art'])
+        if self.settings['setting_debug']:
+            self.grid.draw(self.surfs['surf_game_art'])
+
+        # TODO: draw floor tiles
 
         # Display mouse coordinates in game grid coordinate system
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
@@ -535,10 +557,23 @@ class Game:
                 # Log any other events
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
-        # Randomize voxel artwork if Space is held
-        if self.keys['key_Space']:
+        # Randomize voxel artwork if Shift+Space is held
+        if self.keys['key_Shift_Space']:
             # self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
             self.voxel_artwork.layout = self.voxel_artwork.make_voxels_from_tile_map()
+        # Account for gravity
+        self.player.dz = min(self.max_fall_speed, self.player.dz+self.gravity) # acceleration updates velocity
+        self.player.z += self.player.dz                 # velocity updates position
+        # Levitate player if Space is held
+        if self.keys['key_Space']:
+            self.player.dz = 0                          # reset velocity (turn off gravity)
+            self.player.z -= self.player.speed_rise     # levitate
+        # Land on the floor level (z=0)
+        if self.player.z > 0:
+            # z > 0 means player is BELOW the floor
+            self.player.z = 0                           # reset position
+            self.player.dz = 0                          # reset velocity
+
         # Update transform based on key presses
         # U = 20; L = -20                                 # Upper/Lower bounds
         # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
@@ -566,8 +601,8 @@ class Game:
         if self.keys['key_j']:
             # GO DOWN
             pos = self.player.pos
-            speed = self.player.speed
-            # Scale speed if moving DOWN+LEFT or DOWN+RIGHT
+            speed = self.player.speed_walk
+            # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
             if self.keys['key_h'] or self.keys['key_l']:
                 speed *= 0.7
             # Set new position
@@ -587,8 +622,8 @@ class Game:
         if self.keys['key_k']:
             # GO UP
             pos = self.player.pos
-            speed = self.player.speed
-            # Scale speed if moving UP+LEFT or UP+RIGHT
+            speed = self.player.speed_walk
+            # Scale walking speed if moving UP+LEFT or UP+RIGHT
             if self.keys['key_h'] or self.keys['key_l']:
                 speed *= 0.7
             self.player.pos = (pos[0],                      pos[1] + speed)
@@ -607,8 +642,8 @@ class Game:
         if self.keys['key_h']:
             # GO LEFT
             pos = self.player.pos
-            speed = self.player.speed
-            # Scale speed if moving LEFT+UP or LEFT+DOWN
+            speed = self.player.speed_walk
+            # Scale walking speed if moving LEFT+UP or LEFT+DOWN
             if self.keys['key_k'] or self.keys['key_j']:
                 speed *= 0.7
             self.player.pos = (pos[0] - speed,  pos[1])
@@ -626,8 +661,8 @@ class Game:
         if self.keys['key_l']:
             # GO RIGHT
             pos = self.player.pos
-            speed = self.player.speed
-            # Scale speed if moving RIGHT+UP or RIGHT+DOWN
+            speed = self.player.speed_walk
+            # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
             if self.keys['key_k'] or self.keys['key_j']:
                 speed *= 0.7
             self.player.pos = (pos[0] + speed,  pos[1])
@@ -646,9 +681,9 @@ class Game:
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
         match event.key:
-            case pygame.K_SPACE:
-                self.keys['key_Space'] = False
             case pygame.K_LSHIFT:
+                if self.keys['key_Shift_Space']:
+                    self.keys['key_Shift_Space'] = False
                 if self.keys['key_A']:
                     self.keys['key_A'] = False
                 if self.keys['key_B']:
@@ -661,6 +696,9 @@ class Game:
                     self.keys['key_E'] = False
                 if self.keys['key_F']:
                     self.keys['key_F'] = False
+            case pygame.K_SPACE:
+                self.keys['key_Space'] = False
+                self.keys['key_Shift_Space'] = False
             case pygame.K_a:
                 self.keys['key_A'] = False
                 self.keys['key_a'] = False
@@ -749,9 +787,13 @@ class Game:
             case pygame.K_RALT: logger.debug("Right Alt")
             case pygame.K_LCTRL: logger.debug("Left Ctrl")
             case pygame.K_RCTRL: logger.debug("Right Ctrl")
-            # TEMPORARY randomize voxel artwork
             case pygame.K_SPACE:
-                self.keys['key_Space'] = True
+                if kmod & pygame.KMOD_SHIFT:
+                    # TEMPORARY randomize voxel artwork
+                    self.keys['key_Shift_Space'] = True
+                else:
+                    # TEMPORARY levitate player
+                    self.keys['key_Space'] = True
             # TEMPORARY manipulate the xfm matrix
             case pygame.K_a:
                 if kmod & pygame.KMOD_SHIFT:
@@ -788,28 +830,28 @@ class Game:
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+J' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0],                      pos[1] - self.player.speed)
+                    self.player.pos = (pos[0],                      pos[1] - self.player.speed_walk)
                 else:
                     self.keys['key_j'] = True
             case pygame.K_k: # Move Up
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+K' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0],                      pos[1] + self.player.speed)
+                    self.player.pos = (pos[0],                      pos[1] + self.player.speed_walk)
                 else:
                     self.keys['key_k'] = True
             case pygame.K_h: # Move Left
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+H' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0] - self.player.speed,  pos[1])
+                    self.player.pos = (pos[0] - self.player.speed_walk,  pos[1])
                 else:
                     self.keys['key_h'] = True
             case pygame.K_l: # Move Right
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+L' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0] + self.player.speed,  pos[1])
+                    self.player.pos = (pos[0] + self.player.speed_walk,  pos[1])
                 else:
                     self.keys['key_l'] = True
             case _:
