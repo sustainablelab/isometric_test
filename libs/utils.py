@@ -91,14 +91,25 @@ class Text:
                       special_flags=pygame.BLEND_ALPHA_SDL2
                       )
 
+class HelpHud:
+    def __init__(self, game):
+        self.game = game
+        self.help_text = "HELP\n----"
+        self.text = Text((0,0), font_size=15, sys_font="Roboto Mono")
+
+    def add_text(self, help_text:str):
+        self.help_text += f"\n{help_text}"
+
+    def render(self, color) -> None:
+        self.text.update(f"{self.help_text}")
+        self.text.render(self.game.surfs['surf_os_window'], color)
+
 class DebugHud:
     def __init__(self, game):
         self.game = game
         self.debug_text = ""
-        self.is_visible = True
-
-    def clear_text(self) -> None:
-        self.debug_text = ""
+        # self.text = Text((0,0), font_size=36, sys_font="Built-in Pygame Font")
+        self.text = Text((0,0), font_size=15, sys_font="Roboto Mono")
 
     def add_text(self, debug_text:str):
         """Add another line of debug text.
@@ -110,9 +121,7 @@ class DebugHud:
         """
         self.debug_text += f"\n{debug_text}"
 
-    def render(self, color:Color = Color(255,255,255)):
-        # self.text = Text((0,0), font_size=36, sys_font="Built-in Pygame Font")
-        self.text = Text((0,0), font_size=15, sys_font="Roboto Mono")
+    def render(self, color) -> None:
         mpos = pygame.mouse.get_pos()
         self.text.update(f"FPS: {self.game.clock.get_fps():0.1f} | Mouse: {mpos}"
                          f"{self.debug_text}")
