@@ -8,8 +8,10 @@
 [x] Collision detection between player and walls
 [x] Add gravity to player
 [x] Add player levitation (infinite jump)
+[x] Draw a shadow under the player
+[x] Draw a floor
+    [ ] Give floor same color gradient effect that I put on the grid
 [ ] Put player on top of a wall
-[ ] Draw a floor
 [ ] Pan with mouse
 [ ] Save game data
 [ ] Load game data
@@ -96,6 +98,10 @@ def define_colors() -> dict:
     colors['color_voxel_right'] =     Color(120,120,250,255)
     colors['color_grid_x_axis'] = Color(100,150,200,255)
     colors['color_grid_y_axis'] = Color(200,100,200,255)
+    colors['color_floor_solid'] = Color(70,40,130)
+    floor = colors['color_floor_solid']
+    colors['color_floor_shadow'] = Color(floor.r-20, floor.g-20, floor.b-40)
+    colors['color_floor_shadow_light'] = Color(floor.r-5, floor.g-5, floor.b-10)
     return colors
 
 def define_settings() -> dict:
@@ -135,13 +141,13 @@ class Player:
         self.speed_rise = 3.0
         self.wiggle = 0.1                               # Amount to randomize each coordinate value
         self.moving = False
-        self.z = 0
-        self.dz = 0
+        self.z = 0                                      # Position in z-direction
+        self.dz = 0                                     # Speed in z-direction
 
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
         # Check for motion
-        if self.game.keys['key_j'] or self.game.keys['key_k'] or self.game.keys['key_h'] or self.game.keys['key_l']:
+        if self.dz != 0 or self.game.keys['key_j'] or self.game.keys['key_k'] or self.game.keys['key_h'] or self.game.keys['key_l']:
             self.moving = True
         else:
             self.moving = False
@@ -160,12 +166,51 @@ class Player:
               (G[0] + 1 - d + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + d    + random.uniform(-1*self.wiggle*d, self.wiggle*d)),
               (G[0] + 1 - d + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 1 -d + random.uniform(-1*self.wiggle*d, self.wiggle*d)),
               (G[0] + d     + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 1 -d + random.uniform(-1*self.wiggle*d, self.wiggle*d))]
+        # Draw player shadow -- QUICK AND DIRTY LIGHTING -- this shadow effect is terrible
+        # TEMPORARY: assume shadow is on floor at z=0
+        ### TODO: check actual z-value of what is below player and set 'ground' to that
+        ground = 0
+        ### Grow light shadow proportional to height above ground
+        k = 0.005*(ground - self.z)
+        shadow_light_points_g = [
+                (Gs[0][0] - k, Gs[0][1] - k),
+                (Gs[1][0] + k, Gs[1][1] - k),
+                (Gs[2][0] + k, Gs[2][1] + k),
+                (Gs[3][0] - k, Gs[3][1] + k)]
+        ### TODO: Clip light shadow if neighboring tile is occupied
+        # pos = self.pos
+        # neighbors = [
+        #         (int(pos[0]) - 1, int(pos[1]) - 1),
+        #         (int(pos[0]) - 1, int(pos[1]) + 0),
+        #         (int(pos[0]) - 1, int(pos[1]) + 1),
+        #         (int(pos[0]) + 0, int(pos[1]) - 1),
+        #         (int(pos[0]) + 0, int(pos[1]) + 1),
+        #         (int(pos[0]) + 1, int(pos[1]) - 1),
+        #         (int(pos[0]) + 1, int(pos[1]) + 0),
+        #         (int(pos[0]) + 1, int(pos[1]) + 1),
+        #         ]
+        # for point in shadow_light_points_g:
+        #     if (int(point[0]),int(point[1])) in neighbors:
+        #         point = (int(point[0]),int(point[1]))
+
+        ### Shrink dark shadow proportional to height above ground
         # Center of tile
         # TODO: if moving, push center (player head) in direction of motion
         Gc =  (G[0] + 0.5   + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 0.5  + random.uniform(-1*self.wiggle*d, self.wiggle*d))
+        # k = min(0.5,0.005*(abs(ground - self.z)))
+        k = min(0.25, abs(0.5 - 0.005*(ground - self.z)))
+        shadow_dark_points_g = [
+                (Gc[0] - k, Gc[1] - k),
+                (Gc[0] + k, Gc[1] - k),
+                (Gc[0] + k, Gc[1] + k),
+                (Gc[0] - k, Gc[1] + k)]
         # Convert to pixel coordinates
         points = [self.game.grid.xfm_gp(G) for G in Gs]
         Pc = self.game.grid.xfm_gp(Gc)
+        shadow_light_points_p = [self.game.grid.xfm_gp(G) for G in shadow_light_points_g]
+        shadow_dark_points_p = [self.game.grid.xfm_gp(G) for G in shadow_dark_points_g]
+        pygame.draw.polygon(surf, self.game.colors['color_floor_shadow_light'], shadow_light_points_p)
+        pygame.draw.polygon(surf, self.game.colors['color_floor_shadow'], shadow_dark_points_p)
         # Incorporate player height:
         points = [(p[0],p[1] + self.z) for p in points]
         Pc = (Pc[0], Pc[1] + self.z)
@@ -466,6 +511,13 @@ class Game:
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
         self.surfs['surf_game_art'].fill(self.colors['color_game_art_bgnd'])
+
+        # TEMPORARY: Draw a floor as a single giant square
+        a = self.tile_map.a
+        b = self.tile_map.b
+        points = [self.grid.xfm_gp(G) for G in [(a,a), (b,a), (b,b), (a,b)]]
+        ### polygon(surface, color, points) -> Rect
+        pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_floor_solid'], points)
 
         # Draw grid
         if self.settings['setting_debug']:
