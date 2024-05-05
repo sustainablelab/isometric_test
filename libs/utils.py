@@ -103,6 +103,8 @@ class DebugHud:
     def add_text(self, debug_text:str):
         """Add another line of debug text.
 
+        :param debug_text:str -- add this string to the HUD
+
         Debug text always has FPS and Mouse.
         Each call to add_text() adds a line below that.
         """

@@ -2,9 +2,10 @@
 # vim: set fileencoding=utf-8 :
 """Test isometric grid math.
 [x] Implement the xfms AApg and AAgp
-[ ] Draw a marker at (0,0) and (N,N) to make sure the xfms are correct
-[ ] Draw a rectangular prism to represent the player character
-[ ] Implement keyboard movement of player character
+[x] Draw a marker at (0,0) and (N,N) to make sure the xfms are correct
+[x] Draw some placeholder wireframe art to represent the player character
+[x] Implement keyboard movement of player character
+[ ] Collision detection between player and walls
 """
 
 import sys
@@ -118,31 +119,55 @@ class Wall:
 class Player:
     def __init__(self, game):
         self.game = game
-        self.pos = (self.game.tile_map.a+1,0)
+        self.pos = (9.0,2.0)
+        self.speed = 0.2
+        self.wiggle = 0.1                               # Amount to randomize each coordinate value
+        self.moving = False
+
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
+        # Check for motion
+        if self.game.keys['key_j'] or self.game.keys['key_k'] or self.game.keys['key_h'] or self.game.keys['key_l']:
+            self.moving = True
+        else:
+            self.moving = False
+        if self.moving:
+            # Wiggle more if moving
+            self.wiggle = 0.5
+        else:
+            # Wiggle less if standing still
+            self.wiggle = 0.2
         G = self.pos
         percentage = 0.5                                # Player fills half the tile
         p = 1-percentage
         d = p/2
-        wiggle = 0.5                                    # Amount to randomize each coordinate value
         Gs = [ # Define a polygon on the grid
-              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
-              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + d    + random.uniform(-0.5*d, 0.5*d)),
-              (G[0] + 1 - d + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d)),
-              (G[0] + d     + random.uniform(-0.5*d, 0.5*d), G[1] + 1 -d + random.uniform(-0.5*d, 0.5*d))]
+              (G[0] + d     + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + d    + random.uniform(-1*self.wiggle*d, self.wiggle*d)),
+              (G[0] + 1 - d + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + d    + random.uniform(-1*self.wiggle*d, self.wiggle*d)),
+              (G[0] + 1 - d + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 1 -d + random.uniform(-1*self.wiggle*d, self.wiggle*d)),
+              (G[0] + d     + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 1 -d + random.uniform(-1*self.wiggle*d, self.wiggle*d))]
         # Center of tile
-        Gc =  (G[0] + 0.5   + random.uniform(-0.5*d, 0.5*d), G[1] + 0.5  + random.uniform(-0.5*d, 0.5*d))
+        # TODO: if moving, push center in direction of motion
+        Gc =  (G[0] + 0.5   + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 0.5  + random.uniform(-1*self.wiggle*d, self.wiggle*d))
         # Convert to pixel coordinates
         points = [self.game.grid.xfm_gp(G) for G in Gs]
         Pc = self.game.grid.xfm_gp(Gc)
         # Elevate that center point
         height = 10
         center = (Pc[0], Pc[1] - height*self.game.grid.scale)
-        # pygame.draw.polygon(self.surfs['surf_game_art'],Color(100,255,100), points)
+        # Draw player dress
+        ### polygon(surface, color, points) -> Rect
+        color = Color(self.game.colors['color_grid_y_axis'])
+        pygame.draw.polygon(surf, color, [points[1],points[2],center])
+        color.r -= 50; color.g -=50; color.b -= 50
+        pygame.draw.polygon(surf, color, [points[0],points[1],center])
+        # Draw sketchy lines around player
         ### line(surface, color, start_pos, end_pos) -> Rect
         for p in points:
-            pygame.draw.line(surf, self.game.colors['color_grid_y_axis'], p, center)
+            pygame.draw.line(surf, self.game.colors['color_grid_y_axis'], p, center, width=2)
+        # Draw player head
+        ### circle(surface, color, center, radius, width=0, draw_top_right=None, draw_top_left=None, draw_bottom_left=None, draw_bottom_right=None) -> Rect
+        pygame.draw.circle(surf, Color(0,0,0), center, 2*self.game.grid.scale)
 
 # TODO: Move this out to a level editor later
 class TileMap:
@@ -163,11 +188,25 @@ class TileMap:
         # Make a layout of walls
         a = self.a
         b = self.b
+        # Outer walls
         wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_shade_faces_solid_color")  # Front left wall
         wall2 = Wall(points=[(i,  b-1) for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back right wall
         wall3 = Wall(points=[(a,  i)   for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back left wall
         wall4 = Wall(points=[(b-1,i)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front right wall
         self.walls = [wall1, wall2, wall3, wall4]
+        # Inner walls
+        x=-10 # Wall at x=x
+        a=-10;b=20 # From y=a to y=b
+        self.walls.append(Wall(points=[(x,i) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
+        y=20 # Wall at y=y
+        a=-10;b=20 # From x=a to x=b
+        self.walls.append(Wall(points=[(i,y) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
+        x=-5 # Wall at x=x
+        a=-10;b=15 # From y=a to y=b
+        self.walls.append(Wall(points=[(x,i) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
+        y=15 # Wall at y=y
+        a=-5;b=20 # From x=a to x=b
+        self.walls.append(Wall(points=[(i,y) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
 
 class VoxelArtwork:
     """Extrude voxels on the isometric grid.
@@ -275,31 +314,67 @@ class VoxelArtwork:
         return adjusted_voxel_artwork
 
     def render(self, surf) -> None:
+        """Render voxels and player.
 
-        # TODO: when player is near another voxel, figure out whether
-        # player is behind or in front and place player and voxel in correct draw order.
-        # TEMPORARY: render player first
-        # self.game.player.render(surf)
+        Figure out which voxels the player is "in front" / "behind". Determine
+        correct draw order for the player in relation to the list of voxels.
 
-        # Adjust size of voxels based on percentage that it fills its tile
+        Implementation
+        --------------
+        "In front" and "behind" is handled by draw order. I draw everything
+        and let draw order do the work for me. This is wasteful. But this is
+        just a prototype: as long as frame rate does not get in the way of
+        testing, I do not care how performant the code is.
+
+        "In front" and "behind" is simply determined by grid coordinate (x,y)
+        value. Consider player, p, and voxel, v. Visualize the grid as a
+        top-down view using conventional x,y axes: +x is right, +y is up.
+        Player p is in front of voxel v if px >= vx and py <= vy. Perform this
+        test to determine the player index in the list of voxels.
+
+        Iterate over all voxels and draw each one. When voxel index matches
+        player index, draw draw player.
+        """
+        # TEMPORARY: Adjust size of voxels based on percentage that it fills its tile
+        # TODO: give each voxel its own percentage
         voxels = self.adjust_voxel_size()
+
         # Figure out when to draw player in list of voxels for correct draw order
         player = self.game.player
         player_voxel_index = 0                          # 0 : draw first
         # TODO: iterate over this backwards and break after first hit
         for i,voxel in enumerate(voxels):
             grid_points = voxel[0]
-            lower_right = grid_points[1]                # 1 : Lower right corner
-            if (player.pos[0] >= lower_right[0]) and (player.pos[1] >= lower_right[1]):
+            lower_left = grid_points[0]                 # 0 : Lower left corner
+            if (player.pos[0] >= lower_left[0]) and (player.pos[1] <= lower_left[1]):
                 # Player is in front of this voxel; update draw order
-                player_voxel_index = i
+                player_voxel_index = i + 1
+
+        # DEBUG
+        ### DebugHud.add_text(debug_text:str)
+        if self.game.debug_hud:
+            self.game.debug_hud.add_text(
+                    f"player_voxel_index: i={player_voxel_index}, "
+                    f"player.pos: ({player.pos[0]:.1f},{player.pos[1]:.1f})")
 
         # Convert each voxel to pixel coordinates and render
         for i,voxel in enumerate(voxels):
+            # Draw player
+            if  i == player_voxel_index:
+                player.render(surf)
+            # Draw voxels
             grid_points = voxel[0]
             height = voxel[1]
             style = voxel[2]
             Gs = grid_points
+            # What is the index of the inner wall voxel at (10,3)?
+            if Gs[0] == (9.0,3.0):
+                # DEBUG
+                ### DebugHud.add_text(debug_text:str)
+                if self.game.debug_hud:
+                    self.game.debug_hud.add_text(
+                            f"inner wall voxel index: i={i}, "
+                            f"voxel grid_points: {grid_points}")
             # Convert to pixel coordinates
             Ps = [self.game.grid.xfm_gp(G) for G in grid_points]
             # Describe the three visible surfaces of the voxel as quads
@@ -314,6 +389,9 @@ class VoxelArtwork:
                     pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
                     pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
                     pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
+                    # DEBUG
+                    if Gs[0] == (9.0,3.0):
+                        pygame.draw.polygon(surf, Color(255,255,0), voxel_Ts)
                 case "style_skeleton_frame":
                     ### polygon(surface, color, points, width=0) -> Rect
                     pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts, width=1)
@@ -321,9 +399,6 @@ class VoxelArtwork:
                     pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs, width=1)
                 case _:
                     pass
-            # Draw player
-            if  i == player_voxel_index:
-                player.render(surf)
 
 class Game:
     def __init__(self):
@@ -331,9 +406,9 @@ class Game:
         pygame.font.init()                              # Initialize the font module
 
         os.environ["PYGAME_BLEND_ALPHA_SDL2"] = "1"     # Use SDL2 alpha blending
-        os.environ["SDL_VIDEO_WINDOW_POS"] = "1000,0"   # Position window in upper right
+        # os.environ["SDL_VIDEO_WINDOW_POS"] = "1000,0"   # Position window in upper right
 
-        self.os_window = OsWindow((60*16, 60*9))        # Track OS Window size
+        self.os_window = OsWindow((120*16, 120*9))        # Track OS Window size
         logger.debug(f"Window size: {self.os_window.size[0]} x {self.os_window.size[1]}")
 
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces (including pygame.display)
@@ -345,6 +420,8 @@ class Game:
 
         # Game Data
         self.grid = Grid(self, N=50)
+        # TODO: calculate the "zoom to fit" scale, don't hardcode it
+        self.grid.scale = 2.2                           # Zoom in to fill a 1920 x 1080 window
         self.tile_map = TileMap(N=self.grid.N)
         self.voxel_artwork = VoxelArtwork(self)
         self.player = Player(self)
@@ -358,9 +435,9 @@ class Game:
     def game_loop(self):
         # Create the debug HUD
         if self.settings['setting_debug']:
-            self.debugHud = DebugHud(self)
+            self.debug_hud = DebugHud(self)
         else:
-            self.debugHud = None
+            self.debug_hud = None
 
         # Handle keyboard and mouse
         # Zoom by scrolling the mouse wheel
@@ -377,32 +454,32 @@ class Game:
         # Display mouse coordinates in game grid coordinate system
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
         mpos_g = self.grid.xfm_pg(mpos_p)
-        if self.debugHud:
-            self.debugHud.add_text(f"Mouse (grid): {mpos_g}")
+        if self.debug_hud:
+            self.debug_hud.add_text(f"Mouse (grid): {mpos_g}")
 
-        self.render_mouse_location()
+        # self.render_mouse_location()
         # Use the power of xfm_gp()
         self.render_grid_tile_highlighted_at_mouse()
         # self.render_vertical_line_on_grid(start=(0,0))
         # self.render_vertical_line_on_grid(start=(0,0.5))
         self.voxel_artwork.render(self.surfs['surf_game_art'])
 
-        if self.debugHud:
-            self.debugHud.add_text(f"Voxel %: {int(100*self.voxel_artwork.percentage)}%")
+        if self.debug_hud:
+            self.debug_hud.add_text(f"Voxel %: {int(100*self.voxel_artwork.percentage)}%")
 
         # Display transform matrix element values a,b,c,d,e,f
-        if self.debugHud:
+        if self.debug_hud:
             a,b,c,d = self.grid.scaled()
             e,f = (self.grid.e, self.grid.f)
-            self.debugHud.add_text(f"a: {a:0.1f} | b: {b:0.1f} | c: {c:0.1f} | d: {d:0.1f} | e: {e:0.1f} | f: {f:0.1f}")
+            self.debug_hud.add_text(f"a: {a:0.1f} | b: {b:0.1f} | c: {c:0.1f} | d: {d:0.1f} | e: {e:0.1f} | f: {f:0.1f}")
 
         # Copy game art to OS window
         ### blit(source, dest, area=None, special_flags=0) -> Rect
         self.surfs['surf_os_window'].blit(self.surfs['surf_game_art'], (0,0))
 
         # Display Debug HUD overlay
-        if self.debugHud:
-            self.debugHud.render(self.colors['color_debug_hud'])
+        if self.debug_hud:
+            self.debug_hud.render(self.colors['color_debug_hud'])
 
         # Draw to the OS window
         pygame.display.update()
@@ -444,7 +521,9 @@ class Game:
                     ### M-click: {'pos': (328, 320), 'button': 2, 'touch': False, 'window': None}
                     ### R-click: {'pos': (329, 320), 'button': 3, 'touch': False, 'window': None}
                     match event.button:
-                        case 1: logger.debug("Left-click")
+                        case 1:
+                            logger.debug("Left-click")
+                            self.player.pos = self.grid.xfm_pg(event.pos)
                         case 2: logger.debug("Middle-click")
                         case 3: logger.debug("Right-click")
                         case 4: logger.debug("Mousewheel y=+1")
@@ -484,19 +563,85 @@ class Game:
         if self.keys['key_F']: self.grid.f += 1
         if self.keys['key_f']: self.grid.f -= 1
         # Player movement
-        speed = 0.3
         if self.keys['key_j']:
+            # GO DOWN
             pos = self.player.pos
-            self.player.pos = (pos[0],          pos[1] - speed)
+            speed = self.player.speed
+            # Scale speed if moving DOWN+LEFT or DOWN+RIGHT
+            if self.keys['key_h'] or self.keys['key_l']:
+                speed *= 0.7
+            # Set new position
+            self.player.pos = (pos[0],                      pos[1] - speed)
+            # Collision detection
+            neighbor_x = int(self.player.pos[0])
+            # Going down? Look 1 tile "below" player
+            if self.player.pos[1] < 0:
+                # Example: player_y = -10.8, 1 tile below y=-11
+                neighbor_y = int(self.player.pos[1]) - 1
+            else:
+                # Example: player_y = +10.8, 1 tile below y=+10
+                neighbor_y = int(self.player.pos[1])
+            for wall in self.tile_map.walls:
+                if (neighbor_x,neighbor_y) in wall.points:
+                    self.player.pos = (pos[0], neighbor_y+1)
         if self.keys['key_k']:
+            # GO UP
             pos = self.player.pos
-            self.player.pos = (pos[0],          pos[1] + speed)
+            speed = self.player.speed
+            # Scale speed if moving UP+LEFT or UP+RIGHT
+            if self.keys['key_h'] or self.keys['key_l']:
+                speed *= 0.7
+            self.player.pos = (pos[0],                      pos[1] + speed)
+            # Collision detection
+            neighbor_x = int(self.player.pos[0])
+            # Going up? Look 1 tile "above" player
+            if self.player.pos[1] < 0:
+                # Example: player_y = -10.8, 1 tile above y=-10
+                neighbor_y = int(self.player.pos[1])
+            else:
+                # Example: player_y = +10.8, 1 tile above y=+11
+                neighbor_y = int(self.player.pos[1]) + 1
+            for wall in self.tile_map.walls:
+                if (neighbor_x,neighbor_y) in wall.points:
+                    self.player.pos = (pos[0], neighbor_y-1)
         if self.keys['key_h']:
+            # GO LEFT
             pos = self.player.pos
+            speed = self.player.speed
+            # Scale speed if moving LEFT+UP or LEFT+DOWN
+            if self.keys['key_k'] or self.keys['key_j']:
+                speed *= 0.7
             self.player.pos = (pos[0] - speed,  pos[1])
+            # Collision detection
+            neighbor_y = int(self.player.pos[1])
+            if self.player.pos[0] < 0:
+                # Example: Player_x = -10.8, 1 tile left x=-11
+                neighbor_x = int(self.player.pos[0] - 1)
+            else:
+                # Example player_x = +10.8, 1 tile left x=+10
+                neighbor_x = int(self.player.pos[0])
+            for wall in self.tile_map.walls:
+                if (neighbor_x,neighbor_y) in wall.points:
+                    self.player.pos = (neighbor_x+1, pos[1])
         if self.keys['key_l']:
+            # GO RIGHT
             pos = self.player.pos
+            speed = self.player.speed
+            # Scale speed if moving RIGHT+UP or RIGHT+DOWN
+            if self.keys['key_k'] or self.keys['key_j']:
+                speed *= 0.7
             self.player.pos = (pos[0] + speed,  pos[1])
+            # Collision detection
+            neighbor_y = int(self.player.pos[1])
+            if self.player.pos[0] < 0:
+                # Example: Player_x = -10.8, 1 tile right x=-10
+                neighbor_x = int(self.player.pos[0])
+            else:
+                # Example player_x = +10.8, 1 tile right x=+11
+                neighbor_x = int(self.player.pos[0] + 1)
+            for wall in self.tile_map.walls:
+                if (neighbor_x,neighbor_y) in wall.points:
+                    self.player.pos = (neighbor_x-1, pos[1])
 
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
@@ -640,13 +785,33 @@ class Game:
                     self.keys['key_f'] = True
             # TEMPORARY: player movement
             case pygame.K_j: # Move Down
-                self.keys['key_j'] = True
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+J' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0],                      pos[1] - self.player.speed)
+                else:
+                    self.keys['key_j'] = True
             case pygame.K_k: # Move Up
-                self.keys['key_k'] = True
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+K' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0],                      pos[1] + self.player.speed)
+                else:
+                    self.keys['key_k'] = True
             case pygame.K_h: # Move Left
-                self.keys['key_h'] = True
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+H' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0] - self.player.speed,  pos[1])
+                else:
+                    self.keys['key_h'] = True
             case pygame.K_l: # Move Right
-                self.keys['key_l'] = True
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+L' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0] + self.player.speed,  pos[1])
+                else:
+                    self.keys['key_l'] = True
             case _:
                 # Print unicode for the pressed key or key combo:
                 #       'A' prints "a"        '1' prints "1"
@@ -731,7 +896,7 @@ class Grid:
         # Define offset vector (in pixel coordinates)
         # Place origin at center of game art
         ctr = (int(self.game.os_window.size[0]/2),
-               int(self.game.os_window.size[1]/2))
+               int(self.game.os_window.size[1]/2)+60)
         self._e = ctr[0]
         self._f = ctr[1]
 
