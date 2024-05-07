@@ -165,6 +165,7 @@ class Player:
         self.speed_rise = 3.0
         self.wiggle = 0.1                               # Amount to randomize each coordinate value
         self.moving = False
+        # TODO: sign of z-direction always confuses me, e.g., look at self.z in render_romanized_chars
         self.z = 0                                      # Position in z-direction
         self.dz = 0                                     # Speed in z-direction
         self.is_casting = False
@@ -258,7 +259,48 @@ class Player:
         pygame.draw.circle(surf, Color(0,0,0), center, 2*self.game.grid.scale)
 
     def render_romanized_chars(self, surf:pygame.Surface) -> None:
-        """Render romanized chars above the player's head."""
+        """Render romanized chars above the player's head.
+
+        :param surf:pygame.Surface -- render to this surface (probably 'surf_game_art')
+
+        The chars are already scaled when RomanizedChars is instantiated.
+        """
+        # Get the number of chars to render
+        nchars = 0
+        for letter in self.keystrokes:
+            if letter in self.game.romanized_chars.letters:
+                nchars += 1
+        
+        # TODO: store player center, not player lower left!
+        # pos = self.game.grid.xfm_gp(self.pos)           # FUTURE: Convert player pos to pixel coordinates
+        pos = self.game.grid.xfm_gp((self.pos[0]+0.5, self.pos[1]+0.5))  # HACK: Convert player pos to pixel coordinates
+        # debug_nchars = Text((0,0), font_size=20, sys_font="Roboto Mono")
+        # debug_nchars.update(str(nchars))
+        # text_size = debug_nchars.font.size(debug_nchars.text_lines[0])
+        # logger.debug(f"text_size: {text_size}")
+        text_size = (nchars*self.game.romanized_chars.size[0], self.game.romanized_chars.size[1])
+        pos = (pos[0] - text_size[0]/2, pos[1] - text_size[1] - (self.height + 3) *self.game.grid.scale + self.z)
+        # debug_nchars.pos = pos
+        # debug_nchars.render(surf, Color(255,255,255))
+
+        offset = (0,0)                                  # Track position for next letter
+        for letter in self.keystrokes:
+            if letter in self.game.romanized_chars.letters:
+                index = self.game.romanized_chars.letters[letter]
+                surf.blit(self.game.surfs['surf_romanized_chars'],
+                          (pos[0]+offset[0], pos[1]+offset[1]),
+                          area=pygame.Rect(
+                              (index*self.game.romanized_chars.size[0],0),
+                              self.game.romanized_chars.size
+                              ))
+                offset = (offset[0]+self.game.romanized_chars.size[0], offset[1])
+
+    def old_render_romanized_chars(self, surf:pygame.Surface) -> None:
+        """Render romanized chars above the player's head.
+
+        This is the old version because I attempted to do the scaling here.
+        I couldn't get the text to center after I scaled it.
+        """
         # Get the number of chars to render
         nchars = 0
         for letter in self.keystrokes:
@@ -296,25 +338,29 @@ class Player:
                 # Increment x-position for next letter
                 offset = (offset[0]+self.game.romanized_chars.size[0], offset[1])
 
-        # Scale temporary drawing surface before blitting to game art
+        # Create a new (smaller) surface
         size = self.game.surfs['surf_draw'].get_size()
         size = (size[0]*k, size[1]*k)
+        surf_chars = pygame.Surface(size, flags=pygame.SRCALPHA)
+        # Copy and scale temporary drawing surface to new surface
         smooth = True  # I can't tell a difference in smoothness or performance
         if smooth:
             ### smoothscale(surface, size, dest_surface=None) -> Surface
-            surf_chars = pygame.transform.smoothscale(self.game.surfs['surf_draw'], size)
+            pygame.transform.smoothscale(self.game.surfs['surf_draw'], size, surf_chars)
         else:
             ### scale(surface, size, dest_surface=None) -> Surface
-            surf_chars = pygame.transform.scale(self.game.surfs['surf_draw'], size)
+            pygame.transform.scale(self.game.surfs['surf_draw'], size, surf_chars)
 
+        # Clean the temporary drawing surface
         rect = pygame.Rect( (start[0] - img_w/2, start[1] - img_h/2),
                             (start[0] + img_w/2, start[1] + img_h/2))
-        # Clean
         self.game.surfs['surf_draw'].fill(self.game.colors['color_clear'], rect=rect)
 
         # Scale area rect by k to match scaling of the temporary drawing surface
-        rect = pygame.Rect( (k*(start[0] - img_w/2), k*(start[1] - img_h/2)),
-                            (k*(start[0] + img_w/2), k*(start[1] + img_h/2)))
+        # rect = pygame.Rect( (k*(start[0] - img_w/2), k*(start[1] - img_h/2)),
+        #                     (k*(start[0] + img_w/2), k*(start[1] + img_h/2)))
+        rect = pygame.Rect( (start[0] - scaled_img_w/2, start[1] - scaled_img_h/2),
+                            (start[0] + scaled_img_w/2, start[1] + scaled_img_h/2))
 
         # Blit to game art
         surf.blit(surf_chars, # self.game.surfs['surf_draw'],
@@ -555,14 +601,40 @@ class VoxelArtwork:
                 case _:
                     pass
 
+class Universe:
+    """Recognize spells and then executes them."""
+    pass
+
+
 class RomanizedChars:
+    """Set up game with Romanized Characters.
+
+    Loads image of romanized character spritesheet into Game surfs['surf_romanized_chars'].
+
+    Attributes
+    ----------
+    name:str -- name of spritesheet ("romanized_chars")
+    scale:float -- scale the size of the romanized chars by this amount (e.g., 0.5)
+    size:tuple -- (w,h) of a romanized char (every spritesheet frame is the same size)
+    letters:dict -- Dict key is letter name, value is index into the spritesheet,
+                    e.g., {'f': 0, 'k': 1, 'u': 2, 't': 3, ...}
+
+                    Use event.unicode to find the index into the spritesheet:
+
+                    if event.unicode in self.romanized_chars.letters:
+                        index = self.romanized_chars.letters[event.unicode]
+    """
     def __init__(self, game):
         self.game = game
         # Display romanized chars by pulling Rects from an Aseprite spritesheet
         romanized_chars_spritesheet_path = Path('../spells/data/images/romanized_chars.png')
         # Load a pygame Surface with the spritesheet .png
-        self.game.surfs['surf_romanized_chars'] = load_image(romanized_chars_spritesheet_path).convert()
-        self.name = romanized_chars_spritesheet_path.stem
+        # self.game.surfs['surf_romanized_chars'] = load_image(romanized_chars_spritesheet_path).convert()
+        full_size_surf = load_image(romanized_chars_spritesheet_path).convert()
+        self.scale = 20/64
+        size = (self.scale*full_size_surf.get_width(), self.scale*full_size_surf.get_height())
+        self.game.surfs['surf_romanized_chars'] = pygame.transform.smoothscale(full_size_surf, size)
+        self.name = romanized_chars_spritesheet_path.stem # name: "romanized_chars"
 
         # Extract JSON data fromm Aseprite JSON export
         romanized_chars_json_path = romanized_chars_spritesheet_path.with_suffix('.json')
@@ -572,7 +644,9 @@ class RomanizedChars:
         # Extract w,h from JSON data
         layer_name = f'{self.name}'                     # Layer name in Aseprite JSON
         a_romanized_char = romanized_chars_data['frames'][f'{layer_name} 0.aseprite']['frame']
-        self.size = (a_romanized_char['w'], a_romanized_char['h'])
+        # self.size = (a_romanized_char['w'], a_romanized_char['h'])
+        # logger.debug(f"{self.size}") # (48, 64)
+        self.size = (self.scale*a_romanized_char['w'], self.scale*a_romanized_char['h'])
 
         # Extract letter locations from JSON data
         self.letters = {}                               # Dict of romanized chars
@@ -983,8 +1057,6 @@ class Game:
                 case _:
                     self.player.keystrokes += event.unicode            # Append key-stroke
                     logger.debug(f"self.player.keystrokes: {self.player.keystrokes}")
-                    # if event.unicode in self.romanized_chars_letters:
-                    #     self.letter = self.romanized_chars_letters[event.unicode]
         else:
             match event.key:
                 case pygame.K_q: sys.exit()                 # q - Quit
