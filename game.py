@@ -13,14 +13,18 @@
     [ ] Give floor same color gradient effect that I put on the grid
 [x] Add a Help HUD
 [x] If Debug HUD is visible, show Help HUD below Debug HUD
-[ ] Put player on top of a wall
 [ ] Pan with mouse
 [ ] Save game data
 [ ] Load game data
 [ ] Improved collision detection using height:
     * Player traverses small height differences
     * Player is only blocked when height difference exceeds some amount
-    * [ ] First: let mouse highlight "top" of a wall
+    * [x] Let mouse highlight "top" of a wall
+    * [x] Left-click places player on "top" of a wall
+    * [x] Player stays on top of the wall instead of falling through
+    * [x] Player shadow is on the voxel (if any) under the player
+    * [x] Player can walk off a wall
+    * [ ] Player can walk on a wall (need to consider height difference in collision detection)
 [ ] Include spell casting
     * [x] ':' to start spell casting
     * [x] keystrokes appear at bottom of screen
@@ -169,9 +173,20 @@ class Player:
         # TODO: sign of z-direction always confuses me, e.g., look at self.z in render_romanized_chars
         self.z = 0                                      # Position in z-direction
         self.dz = 0                                     # Speed in z-direction
+        self.voxel = None                               # The voxel at the player's location (e.g., standing on a wall)
         self.is_casting = False
         self.spell = ""
         self.keystrokes = ""
+
+    def update_voxel(self) -> None:
+        """Figure out which voxel (if any) is below the player."""
+        self.voxel = None  # Assume nothing under the player
+        G = (int(self.pos[0]), int(self.pos[1]))
+        for voxel in self.game.voxel_artwork.layout:
+            grid_points = voxel[0]
+            height = voxel[1]
+            if G == grid_points[0]:
+                self.voxel = voxel
 
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
@@ -197,10 +212,12 @@ class Player:
               (G[0] + d     + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 1 -d + random.uniform(-1*self.wiggle*d, self.wiggle*d))]
         # Draw player shadow -- QUICK AND DIRTY LIGHTING -- this shadow effect is terrible
         # TEMPORARY: assume shadow is on floor at z=0
-        ### TODO: check actual z-value of what is below player and set 'ground' to that
-        ground = 0
-        ### Grow light shadow proportional to height above ground
-        k = 0.005*(ground - self.z)
+        # Check actual z-value of what is below player and set 'floor_height' to that
+        floor_height = 0
+        if self.voxel != None:
+            floor_height = -1*self.voxel[1]*self.game.grid.scale
+        ### Grow light shadow proportional to height above floor_height
+        k = 0.005*(floor_height - self.z)
         shadow_light_points_g = [
                 (Gs[0][0] - k, Gs[0][1] - k),
                 (Gs[1][0] + k, Gs[1][1] - k),
@@ -222,12 +239,12 @@ class Player:
         #     if (int(point[0]),int(point[1])) in neighbors:
         #         point = (int(point[0]),int(point[1]))
 
-        ### Shrink dark shadow proportional to height above ground
+        ### Shrink dark shadow proportional to height above floor_height
         # Center of tile
         # TODO: if moving, push center (player head) in direction of motion
         Gc =  (G[0] + 0.5   + random.uniform(-1*self.wiggle*d, self.wiggle*d), G[1] + 0.5  + random.uniform(-1*self.wiggle*d, self.wiggle*d))
-        # k = min(0.5,0.005*(abs(ground - self.z)))
-        k = min(0.25, abs(0.5 - 0.005*(ground - self.z)))
+        # k = min(0.5,0.005*(abs(floor_height - self.z)))
+        k = min(0.25, abs(0.5 - 0.005*(floor_height - self.z)))
         shadow_dark_points_g = [
                 (Gc[0] - k, Gc[1] - k),
                 (Gc[0] + k, Gc[1] - k),
@@ -236,8 +253,11 @@ class Player:
         # Convert to pixel coordinates
         points = [self.game.grid.xfm_gp(G) for G in Gs]
         Pc = self.game.grid.xfm_gp(Gc)
-        shadow_light_points_p = [self.game.grid.xfm_gp(G) for G in shadow_light_points_g]
-        shadow_dark_points_p = [self.game.grid.xfm_gp(G) for G in shadow_dark_points_g]
+        shadow_light_points_p_z0 = [self.game.grid.xfm_gp(G) for G in shadow_light_points_g]
+        shadow_dark_points_p_z0 = [self.game.grid.xfm_gp(G) for G in shadow_dark_points_g]
+        # Bring the shadow up to the floor height
+        shadow_light_points_p = [(P[0],P[1]+floor_height) for P in shadow_light_points_p_z0]
+        shadow_dark_points_p  = [(P[0],P[1]+floor_height) for P in shadow_dark_points_p_z0]
         pygame.draw.polygon(surf, self.game.colors['color_floor_shadow_light'], shadow_light_points_p)
         pygame.draw.polygon(surf, self.game.colors['color_floor_shadow'], shadow_dark_points_p)
         # Incorporate player height:
@@ -726,9 +746,14 @@ class Game:
         if self.debug_hud:
             self.debug_hud.add_text(f"Mouse (grid): {mpos_g}")
 
-        # self.render_vertical_line_on_grid(start=(0,0))
-        # self.render_vertical_line_on_grid(start=(0,0.5))
+        # Draw the layout of voxels and player
         self.voxel_artwork.render(self.surfs['surf_game_art'])
+
+        # Figure out which voxel is below the player
+        self.player.update_voxel()
+        if self.debug_hud:
+            self.debug_hud.add_text(f"self.player.voxel: {self.player.voxel}")
+
         # self.render_mouse_location()
         # Use the power of xfm_gp()
         self.render_grid_tile_highlighted_at_mouse()
@@ -861,10 +886,14 @@ class Game:
         if self.keys['key_Space']:
             self.player.dz = 0                          # reset velocity (turn off gravity)
             self.player.z -= self.player.speed_rise     # levitate
-        # Land on the floor level (z=0)
-        if self.player.z > 0:
+        # Stop falling if player is standing on something
+        floor_height = 0
+        if self.player.voxel != None:
+            floor_height = -1*self.player.voxel[1]*self.grid.scale
+            if self.debug_hud: self.debug_hud.add_text(f"floor_height: {floor_height}")
+        if self.player.z > floor_height:
             # z > 0 means player is BELOW the floor
-            self.player.z = 0                           # reset position
+            self.player.z = floor_height                # reset position
             self.player.dz = 0                          # reset velocity
 
         # Update transform based on key presses
