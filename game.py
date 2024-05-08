@@ -683,6 +683,7 @@ class Game:
         self.max_fall_speed = 15.0
         self.player = Player(self)
         self.romanized_chars = RomanizedChars(self)
+        self.mouses = {}
 
         # FPS
         self.clock = pygame.time.Clock()
@@ -732,6 +733,8 @@ class Game:
         # Use the power of xfm_gp()
         self.render_grid_tile_highlighted_at_mouse()
         self.render_voxel_top_highlighted_at_mouse()
+        if self.debug_hud:
+            self.debug_hud.add_text(f"mouse_height: {self.mouses['mouse_height']}")
 
         if self.debug_hud:
             self.debug_hud.add_text(f"Voxel %: {int(100*self.voxel_artwork.percentage)}%")
@@ -835,6 +838,7 @@ class Game:
                         case 1:
                             logger.debug("Left-click")
                             self.player.pos = self.grid.xfm_pg(event.pos)
+                            self.player.z = -1*self.grid.scale*self.mouses['mouse_height']
                         case 2: logger.debug("Middle-click")
                         case 3: logger.debug("Right-click")
                         case 4: logger.debug("Mousewheel y=+1")
@@ -1214,7 +1218,8 @@ class Game:
 
         # Check if this grid coordinate is in the VoxelArtwork
         tile_has_stuff = False
-        h = 0
+        self.mouses['mouse_height'] = 0
+        h = self.mouses['mouse_height']
         for voxel in self.voxel_artwork.layout:
             ### Example voxel:
             ### [
@@ -1230,10 +1235,12 @@ class Game:
                 h = height
                 # logger.debug(f"{G}: {h}")
                 break
-            # for grid_point in grid_points:
-            #     if G == grid_point:
-        if not tile_has_stuff:
-            # logger.debug(f"EMPTY")
+
+        # Store this height value for use elsewhere
+        self.mouses['mouse_height'] = h
+
+        if h==0:
+            # Don't draw the yellow highlight
             return
 
         Gs = [ # Define a square tile at that location
@@ -1246,6 +1253,7 @@ class Game:
         # Add height to the square tile
         # h = -20 # TEMPORARY: Hardcoded value
         points_zh = [(P[0], P[1] - h*self.grid.scale) for P in points_z0]
+        # Draw a yellow highlight above the voxel
         pygame.draw.polygon(self.surfs['surf_game_art'], Color(200,200,100), points_zh)
 
     def render_grid_tile_highlighted_at_mouse(self) -> None:
