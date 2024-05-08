@@ -20,6 +20,7 @@
 [ ] Improved collision detection using height:
     * Player traverses small height differences
     * Player is only blocked when height difference exceeds some amount
+    * [ ] First: let mouse highlight "top" of a wall
 [ ] Include spell casting
     * [x] ':' to start spell casting
     * [x] keystrokes appear at bottom of screen
@@ -724,12 +725,13 @@ class Game:
         if self.debug_hud:
             self.debug_hud.add_text(f"Mouse (grid): {mpos_g}")
 
-        # self.render_mouse_location()
-        # Use the power of xfm_gp()
-        self.render_grid_tile_highlighted_at_mouse()
         # self.render_vertical_line_on_grid(start=(0,0))
         # self.render_vertical_line_on_grid(start=(0,0.5))
         self.voxel_artwork.render(self.surfs['surf_game_art'])
+        # self.render_mouse_location()
+        # Use the power of xfm_gp()
+        self.render_grid_tile_highlighted_at_mouse()
+        self.render_voxel_top_highlighted_at_mouse()
 
         if self.debug_hud:
             self.debug_hud.add_text(f"Voxel %: {int(100*self.voxel_artwork.percentage)}%")
@@ -1201,11 +1203,56 @@ class Game:
         pygame.draw.circle(surf, Color(255,255,255,100), (radius,radius), radius, width=2)
         self.surfs['surf_game_art'].blit(surf, mpos_p, special_flags=pygame.BLEND_ALPHA_SDL2)
 
+    def render_voxel_top_highlighted_at_mouse(self) -> None:
+        """Display mouse location by highlighting the top of the voxel where the mouse is hovering."""
+        G = self.grid.xfm_pg(pygame.mouse.get_pos())
+        # Check if this grid coordinate is in the TileMap
+        # tile_has_stuff = False
+        # for wall in self.tile_map.walls:
+        #     if G in wall.points:
+        #         tile_has_stuff = True
+
+        # Check if this grid coordinate is in the VoxelArtwork
+        tile_has_stuff = False
+        h = 0
+        for voxel in self.voxel_artwork.layout:
+            ### Example voxel:
+            ### [
+            ###  grid_points: [(20, -25), (21, -25), (21, -24), (20, -24)],
+            ###  height: 27,
+            ###  style: 'style_shade_faces_solid_color'
+            ### ]
+            # logger.debug(f"{voxel}")
+            grid_points = voxel[0]
+            height = voxel[1]
+            if G == grid_points[0]:
+                tile_has_stuff = True
+                h = height
+                # logger.debug(f"{G}: {h}")
+                break
+            # for grid_point in grid_points:
+            #     if G == grid_point:
+        if not tile_has_stuff:
+            # logger.debug(f"EMPTY")
+            return
+
+        Gs = [ # Define a square tile at that location
+              (G[0]  ,G[1]  ),
+              (G[0]+1,G[1]  ),
+              (G[0]+1,G[1]+1),
+              (G[0]  ,G[1]+1)]
+        # Xfm square tile from grid coordinates to pixel coordinates
+        points_z0 = [self.grid.xfm_gp(G) for G in Gs]
+        # Add height to the square tile
+        # h = -20 # TEMPORARY: Hardcoded value
+        points_zh = [(P[0], P[1] - h*self.grid.scale) for P in points_z0]
+        pygame.draw.polygon(self.surfs['surf_game_art'], Color(200,200,100), points_zh)
+
     def render_grid_tile_highlighted_at_mouse(self) -> None:
         """Display mouse location by highlighting the grid square the mouse is hovering over."""
         G = self.grid.xfm_pg(pygame.mouse.get_pos())
         Gs = [ # Define a square tile on the grid
-                (G[0],  G[1]  ),
+                (G[0]  ,G[1]  ),
                 (G[0]+1,G[1]  ),
                 (G[0]+1,G[1]+1),
                 (G[0]  ,G[1]+1)]
