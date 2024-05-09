@@ -41,6 +41,8 @@
         * in its current state, I cannot render the mouse cursor "under" the
         player without also putting it "under" the voxel that the player is
         standing on
+    [x] Refactor TileMap to be a dict of grid locations rather than a list of walls
+    [ ] Refactor VoxelArtwork to describe voxels as dicts rather than lists
 """
 
 import sys
@@ -405,8 +407,13 @@ class TileMap:
     :param N:int -- length of grid (grid is NxN)
 
     Attributes
+    N:int -- grid is NxN
     a:int -- lower left of layout is grid coordinate (a,a)
     b:int -- lower left of layout is grid coordinate (b,b)
+    layout:dict --  keys are the grid coordinate of the lower-left of the grid tile
+                    values are a dict describing the tile
+
+    Old attributes
     walls:list -- list of walls, each wall is a list of voxels, each voxel has a pos, height, and style
     """
     def __init__(self, N:int):
@@ -417,25 +424,33 @@ class TileMap:
         # Make a layout of walls
         a = self.a
         b = self.b
+
+        # Create a layout (TODO: move this to a level editor/generator)
+        layout = {}
+        ### Example making a single voxel wall in the center of the grid
+        # layout[(0,0)] = {'height':25, 'style':"style_shade_faces_solid_color"}
+
+        ### Make walls
         # Outer walls
-        wall1 = Wall(points=[(i,  a)   for i in range(a,b)], height=25, style="style_shade_faces_solid_color")  # Front left wall
-        wall2 = Wall(points=[(i,  b-1) for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back right wall
-        wall3 = Wall(points=[(a,  i)   for i in range(a,b)], height=65, style="style_shade_faces_solid_color")  # Back left wall
-        wall4 = Wall(points=[(b-1,i)   for i in range(a,b)], height=25, style="style_skeleton_frame")           # Front right wall
-        self.walls = [wall1, wall2, wall3, wall4]
-        # Inner walls
-        x=-10 # Wall at x=x
-        a=-10;b=20 # From y=a to y=b
-        self.walls.append(Wall(points=[(x,i) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
-        y=20 # Wall at y=y
-        a=-10;b=20 # From x=a to x=b
-        self.walls.append(Wall(points=[(i,y) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
-        x=-5 # Wall at x=x
-        a=-10;b=15 # From y=a to y=b
-        self.walls.append(Wall(points=[(x,i) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
-        y=15 # Wall at y=y
-        a=-5;b=20 # From x=a to x=b
-        self.walls.append(Wall(points=[(i,y) for i in range(a,b)], height=5, style="style_shade_faces_solid_color"))
+        for i in range(a,b):
+            layout[(i,  a)]   = {'height':25, 'style':"style_shade_faces_solid_color"} # Front left wall
+            layout[(i,  b-1)] = {'height':65, 'style':"style_shade_faces_solid_color"} # Back right wall
+            layout[(a,  i)]   = {'height':65, 'style':"style_shade_faces_solid_color"} # Back left wall
+            layout[(b-1,i)]   = {'height':25, 'style':"style_skeleton_frame"} # Front right wall
+        # Inner walls: walls at constant x from y=a to y=b and constant y from x=a to x=b
+        x = -10; a = -10; b = 20
+        for i in range(a,b):
+            layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+        y = 20; a = -10; b = 20
+        for i in range(a,b):
+            layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+        x = -5; a = -10; b = 15
+        for i in range(a,b):
+            layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+        y = 15; a = -5; b = 20
+        for i in range(a,b):
+            layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+        self.layout = layout
 
 class VoxelArtwork:
     """Extrude voxels on the isometric grid.
@@ -504,21 +519,29 @@ class VoxelArtwork:
 
         a = self.game.tile_map.a
         b = self.game.tile_map.b
-        walls = self.game.tile_map.walls
+        # walls = self.game.tile_map.walls
         # Decrement y values so that the draw order is correct for how I am
         # drawing voxels: I have to draw the ones "behind" first.
         for j in range(b,a-1,-1):
             for i in range(a,b):
                 G = (i,j)
-                for wall in walls:
-                    if G in wall.points:
-                        height = random.choice(list(range(wall.height,wall.height+5)))
-                        grid_points = [(G[0]  ,G[1]  ),
-                                       (G[0]+1,G[1]  ),
-                                       (G[0]+1,G[1]+1),
-                                       (G[0]  ,G[1]+1)]
-                        voxel_artwork.append([grid_points,height,wall.style])
-                        break
+                # for wall in walls:
+                #     if G in wall.points:
+                        # height = random.choice(list(range(wall.height,wall.height+5)))
+                        # grid_points = [(G[0]  ,G[1]  ),
+                        #                (G[0]+1,G[1]  ),
+                        #                (G[0]+1,G[1]+1),
+                        #                (G[0]  ,G[1]+1)]
+                        # voxel_artwork.append([grid_points,height,wall.style])
+                        # break
+                if G in self.game.tile_map.layout:
+                    wall = self.game.tile_map.layout[G]
+                    height = random.choice(list(range(wall['height'],wall['height']+5)))
+                    grid_points = [(G[0]  ,G[1]  ),
+                                   (G[0]+1,G[1]  ),
+                                   (G[0]+1,G[1]+1),
+                                   (G[0]  ,G[1]+1)]
+                    voxel_artwork.append([grid_points,height,wall['style']])
         return voxel_artwork
 
     def adjust_voxel_size(self) -> list:
@@ -628,6 +651,10 @@ class VoxelArtwork:
                     pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs, width=1)
                 case _:
                     pass
+        # If player is in front of all voxels, player has not been drawn yet!
+        if player_voxel_index == len(voxels):
+            # Draw the player now
+            player.render(surf)
 
 class Universe:
     """Recognize spells and then executes them."""
@@ -945,9 +972,11 @@ class Game:
             else:
                 # Example: player_y = +10.8, 1 tile below y=+10
                 neighbor_y = int(self.player.pos[1])
-            for wall in self.tile_map.walls:
-                if (neighbor_x,neighbor_y) in wall.points:
-                    self.player.pos = (pos[0], neighbor_y+1)
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (pos[0], neighbor_y+1)
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                self.player.pos = (pos[0], neighbor_y+1)
         if self.keys['key_k']:
             # GO UP
             pos = self.player.pos
@@ -965,9 +994,11 @@ class Game:
             else:
                 # Example: player_y = +10.8, 1 tile above y=+11
                 neighbor_y = int(self.player.pos[1]) + 1
-            for wall in self.tile_map.walls:
-                if (neighbor_x,neighbor_y) in wall.points:
-                    self.player.pos = (pos[0], neighbor_y-1)
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (pos[0], neighbor_y-1)
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                self.player.pos = (pos[0], neighbor_y-1)
         if self.keys['key_h']:
             # GO LEFT
             pos = self.player.pos
@@ -984,9 +1015,11 @@ class Game:
             else:
                 # Example player_x = +10.8, 1 tile left x=+10
                 neighbor_x = int(self.player.pos[0])
-            for wall in self.tile_map.walls:
-                if (neighbor_x,neighbor_y) in wall.points:
-                    self.player.pos = (neighbor_x+1, pos[1])
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (neighbor_x+1, pos[1])
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                self.player.pos = (neighbor_x+1, pos[1])
         if self.keys['key_l']:
             # GO RIGHT
             pos = self.player.pos
@@ -1003,9 +1036,11 @@ class Game:
             else:
                 # Example player_x = +10.8, 1 tile right x=+11
                 neighbor_x = int(self.player.pos[0] + 1)
-            for wall in self.tile_map.walls:
-                if (neighbor_x,neighbor_y) in wall.points:
-                    self.player.pos = (neighbor_x-1, pos[1])
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (neighbor_x-1, pos[1])
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                self.player.pos = (neighbor_x-1, pos[1])
 
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
