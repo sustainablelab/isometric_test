@@ -34,6 +34,13 @@
     * [ ] start a newline if romanized chars extend too far
     * [ ] make color of romanized chars adjustable
     * [ ] add more characters (Kurt added letter 'z')
+[ ] Refactor: pull logic out of rendering
+    * Rendering should only be responsible for draw order!
+    * Calculate info necessary for rendering before the one big render call
+    * Example:
+        * in its current state, I cannot render the mouse cursor "under" the
+        player without also putting it "under" the voxel that the player is
+        standing on
 """
 
 import sys
