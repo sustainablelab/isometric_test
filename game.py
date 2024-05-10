@@ -42,7 +42,10 @@
         player without also putting it "under" the voxel that the player is
         standing on
     [x] Refactor TileMap to be a dict of grid locations rather than a list of walls
-    [ ] Refactor VoxelArtwork to describe voxels as dicts rather than lists
+    [x] Refactor VoxelArtwork to describe voxels as dicts rather than lists
+        * Ah, but I still need a list to iterate over for draw-order.
+    [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
+
 """
 
 import sys
@@ -189,6 +192,16 @@ class Player:
 
     def update_voxel(self) -> None:
         """Figure out which voxel (if any) is below the player."""
+        G = (int(self.pos[0]), int(self.pos[1]))
+        tiles = self.game.tile_map.layout
+        voxels = self.game.voxel_artwork.layout
+        if G in tiles:
+            self.voxel = voxels[G]
+        else:
+            self.voxel = None # Nothing under the player
+
+    def old_update_voxel(self) -> None:
+        """Figure out which voxel (if any) is below the player."""
         self.voxel = None  # Assume nothing under the player
         G = (int(self.pos[0]), int(self.pos[1]))
         for voxel in self.game.voxel_artwork.layout:
@@ -224,7 +237,7 @@ class Player:
         # Check actual z-value of what is below player and set 'floor_height' to that
         floor_height = 0
         if self.voxel != None:
-            floor_height = -1*self.voxel[1]*self.game.grid.scale
+            floor_height = -1*self.voxel['height']*self.game.grid.scale
         ### Grow light shadow proportional to height above floor_height
         k = 0.005*(floor_height - self.z)
         shadow_light_points_g = [
@@ -427,29 +440,33 @@ class TileMap:
 
         # Create a layout (TODO: move this to a level editor/generator)
         layout = {}
-        ### Example making a single voxel wall in the center of the grid
-        # layout[(0,0)] = {'height':25, 'style':"style_shade_faces_solid_color"}
 
-        ### Make walls
-        # Outer walls
-        for i in range(a,b):
-            layout[(i,  a)]   = {'height':25, 'style':"style_shade_faces_solid_color"} # Front left wall
-            layout[(i,  b-1)] = {'height':65, 'style':"style_shade_faces_solid_color"} # Back right wall
-            layout[(a,  i)]   = {'height':65, 'style':"style_shade_faces_solid_color"} # Back left wall
-            layout[(b-1,i)]   = {'height':25, 'style':"style_skeleton_frame"} # Front right wall
-        # Inner walls: walls at constant x from y=a to y=b and constant y from x=a to x=b
-        x = -10; a = -10; b = 20
-        for i in range(a,b):
-            layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
-        y = 20; a = -10; b = 20
-        for i in range(a,b):
-            layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
-        x = -5; a = -10; b = 15
-        for i in range(a,b):
-            layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
-        y = 15; a = -5; b = 20
-        for i in range(a,b):
-            layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+        if 0:
+            ### Example making a single voxel wall in the center of the grid
+            layout[(0,0)] = {'height':25, 'style':"style_shade_faces_solid_color"}
+
+        else:
+            ### Make walls
+            # Outer walls
+            for i in range(a,b):
+                layout[(i,  a)]   = {'height':25, 'style':"style_shade_faces_solid_color"} # Front left wall
+                layout[(i,  b-1)] = {'height':65, 'style':"style_shade_faces_solid_color"} # Back right wall
+                layout[(a,  i)]   = {'height':65, 'style':"style_shade_faces_solid_color"} # Back left wall
+                layout[(b-1,i)]   = {'height':25, 'style':"style_skeleton_frame"} # Front right wall
+            # Inner walls: walls at constant x from y=a to y=b and constant y from x=a to x=b
+            x = -10; a = -10; b = 20
+            for i in range(a,b):
+                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+            y = 20; a = -10; b = 20
+            for i in range(a,b):
+                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+            x = -5; a = -10; b = 15
+            for i in range(a,b):
+                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+            y = 15; a = -5; b = 20
+            for i in range(a,b):
+                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+
         self.layout = layout
 
 class VoxelArtwork:
@@ -499,9 +516,30 @@ class VoxelArtwork:
                 voxel_artwork.append([grid_points,height])
         return voxel_artwork
 
-    def make_voxels_from_tile_map(self) -> list:
+    def make_voxels_from_tile_map(self) -> dict:
+        """Return a dict of voxels ready for rendering.
+
+        Dict of voxels:
+        key: same key as tilemap
+        value: dict that describes the voxel
+        """
+        voxel_artwork = {}
+        for G in self.game.tile_map.layout:
+            # TEMPORARY: assume for now that every thing is a wall
+            wall = self.game.tile_map.layout[G]
+            height = random.choice(list(range(wall['height'],wall['height']+5)))
+            grid_points = [(G[0]  ,G[1]  ),
+                           (G[0]+1,G[1]  ),
+                           (G[0]+1,G[1]+1),
+                           (G[0]  ,G[1]+1)]
+            voxel_artwork[G] = {'grid_points':grid_points, 'height':height, 'style':wall['style']}
+        return voxel_artwork
+
+
+    def old_make_voxels_from_tile_map(self) -> list:
         """Return a list of voxels ready for rendering.
 
+        Old:
         Each item in the list is a Voxel, expressed as list [points:list, height:int].
         Height is assigned here: a nominal height is assigned in the tile map,
         but a small random change in height is added here.
@@ -544,7 +582,30 @@ class VoxelArtwork:
                     voxel_artwork.append([grid_points,height,wall['style']])
         return voxel_artwork
 
-    def adjust_voxel_size(self) -> list:
+    def adjust_voxel_size(self) -> dict:
+        """Scale size of each voxel by some percentage."""
+        adjusted_voxel_artwork = {}
+        # Calculate how much to shrink voxels
+        p = 1-self.percentage
+        d = p/2
+        # Convert each voxel to pixel coordinates and render
+        # TODO: rename self.layout to self.voxel_dict or something more descriptive
+        for G in self.layout:
+            Gs = self.layout[G]['grid_points']
+            adjusted_grid_points = [
+                    (Gs[0][0] + d, Gs[0][1] + d),
+                    (Gs[1][0] - d, Gs[1][1] + d),
+                    (Gs[2][0] - d, Gs[2][1] - d),
+                    (Gs[3][0] + d, Gs[3][1] - d)
+                    ]
+            # Copy height and style
+            height = self.layout[G]['height']
+            style = self.layout[G]['style']
+            # Apply self.percentage and keep the voxel centered on the tile
+            adjusted_voxel_artwork[G] = {'grid_points':adjusted_grid_points,'height':height,'style':style}
+        return adjusted_voxel_artwork
+
+    def old_adjust_voxel_size(self) -> list:
         """Scale size of each voxel by some percentage."""
         adjusted_voxel_artwork = []
         # Calculate how much to shrink voxels
@@ -566,6 +627,102 @@ class VoxelArtwork:
         return adjusted_voxel_artwork
 
     def render(self, surf) -> None:
+        """Render voxels, player, and mouse."""
+        voxels = self.adjust_voxel_size()
+        player = self.game.player
+        mouse = self.game.grid.xfm_pg(pygame.mouse.get_pos())
+
+        ### voxels[G] = {'grid_points':grid_points, 'height':height, 'style':wall['style']}
+        # Make a back-to-front draw order
+        a = self.game.tile_map.a # -25
+        b = self.game.tile_map.b # +25
+        grid_list = [] # Walk grid coordinates in the order listed here
+        for j in range(b,a-1,-1):
+            for i in range(a,b):
+                G = (i,j)
+                grid_list.append(G)
+        # logger.debug(grid_list)
+        ### [(-25,  25), (-24,  25), ... (0,  25), ... (24,  25),
+        ###  (-25,  24), (-24,  24), ... (0,  24), ... (24,  24),
+        ###  ...
+        ###  (-25, -25), (-24, -25), ... (0, -25), ... (24, -25)]
+
+        # TODO: come back to this idea -- maybe I run this for everything to store a draw order with every voxel and object.
+        # Figure out when to draw the player
+        # player_draw_index = 0
+        # for i,G in enumerate(grid_list):
+        #     if G in voxels:
+        #         if (player.pos[0] >= G[0]) and (player.pos[1] <= G[1]):
+        #             # Player is in front of this voxel; update draw order
+        #             player_draw_index = i + 1
+
+        # Figure out when to draw the player and mouse
+        player_draw_index = 0; mouse_draw_index = 0; voxel_index=0
+        for G in grid_list:
+            if G in voxels:
+                voxel_index += 1
+                if (player.pos[0] >= G[0]) and (player.pos[1] <= G[1]):
+                    # Player is in front of this voxel; update draw order
+                    player_draw_index = voxel_index + 1
+                if (mouse[0] >= G[0]) and (mouse[1] <= G[1]):
+                    mouse_draw_index = voxel_index + 1
+
+        # for i,G in enumerate(grid_list):
+        voxel_index = 0 # draw_index
+        for G in grid_list:
+            if G in voxels:
+                voxel_index += 1
+                ### Draw voxel
+                # Convert the base quad grid points to pixel points
+                Ps = [self.game.grid.xfm_gp(grid_point) for grid_point in voxels[G]['grid_points']]
+                # Describe the three visible surfaces of the voxel as quads
+                ### T: Top, L: Left, R: Right
+                height = voxels[G]['height']
+                voxel_Ts = [(P[0],P[1] - height*self.game.grid.scale) for P in Ps]
+                voxel_Ls = [Ps[0], Ps[1], voxel_Ts[1], voxel_Ts[0]]
+                voxel_Rs = [Ps[1], Ps[2], voxel_Ts[2], voxel_Ts[1]]
+                style = voxels[G]['style']
+                match style:
+                    case "style_shade_faces_solid_color":
+                        # Render the three visible quads
+                        ### polygon(surface, color, points) -> Rect
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
+                    case "style_skeleton_frame":
+                        ### polygon(surface, color, points, width=0) -> Rect
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts, width=1)
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls, width=1)
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs, width=1)
+                    case _:
+                        pass
+                # Check if mouse is at this voxel
+                if G == mouse:
+                    # Draw mouse location highlighting the top of the voxel
+                    points_zh = [(P[0], P[1] - height*self.game.grid.scale) for P in Ps]
+                    # Draw a yellow highlight above the voxel
+                    pygame.draw.polygon(surf, Color(200,200,100), points_zh)
+            # TODO: do not draw green highlight if drawing a yellow highlight
+            # Check draw order for mouse
+            if voxel_index == mouse_draw_index:
+                # Draw the mouse green highlight on the grid
+                self.game.render_grid_tile_highlighted_at_mouse()
+            # Check draw order for player
+            if voxel_index == player_draw_index:
+                # Draw player
+                player.render(surf)
+        if self.game.debug_hud:
+            self.game.debug_hud.add_text(f"player_draw_index: {player_draw_index}")
+            self.game.debug_hud.add_text(f"len(voxels): {len(voxels)}")
+        # If mouse is in front of all voxels, player has not been drawn yet!
+        if mouse_draw_index >= len(voxels):
+            self.game.render_grid_tile_highlighted_at_mouse()
+        # If player is in front of all voxels, player has not been drawn yet!
+        if player_draw_index >= len(voxels):
+            # Draw the player now
+            player.render(surf)
+
+    def old_render(self, surf) -> None:
         """Render voxels and player.
 
         Figure out which voxels the player is "in front" / "behind". Determine
@@ -790,8 +947,8 @@ class Game:
 
         # self.render_mouse_location()
         # Use the power of xfm_gp()
-        self.render_grid_tile_highlighted_at_mouse()
-        self.render_voxel_top_highlighted_at_mouse()
+        # self.render_grid_tile_highlighted_at_mouse()
+        self.update_mouse_height()
         if self.debug_hud:
             self.debug_hud.add_text(f"mouse_height: {self.mouses['mouse_height']}")
 
@@ -923,7 +1080,7 @@ class Game:
         # Stop falling if player is standing on something
         floor_height = 0
         if self.player.voxel != None:
-            floor_height = -1*self.player.voxel[1]*self.grid.scale
+            floor_height = -1*self.player.voxel['height']*self.grid.scale
             if self.debug_hud: self.debug_hud.add_text(f"floor_height: {floor_height}")
         if self.player.z > floor_height:
             # z > 0 means player is BELOW the floor
@@ -1278,7 +1435,20 @@ class Game:
         pygame.draw.circle(surf, Color(255,255,255,100), (radius,radius), radius, width=2)
         self.surfs['surf_game_art'].blit(surf, mpos_p, special_flags=pygame.BLEND_ALPHA_SDL2)
 
-    def render_voxel_top_highlighted_at_mouse(self) -> None:
+    # TODO: move this rendering into VoxelArtwork.render
+    def update_mouse_height(self) -> None:
+        """Mouse height is the top of the voxel where the mouse is hovering."""
+        G = self.grid.xfm_pg(pygame.mouse.get_pos())
+        voxels = self.voxel_artwork.layout
+        h = 0
+        if G in voxels:
+            h = voxels[G]['height']
+        # Store this height value for use elsewhere
+        self.mouses['mouse_height'] = h
+
+
+    # Moved into VoxelArtwork.render()
+    def old_render_voxel_top_highlighted_at_mouse(self) -> None:
         """Display mouse location by highlighting the top of the voxel where the mouse is hovering."""
         G = self.grid.xfm_pg(pygame.mouse.get_pos())
         # Check if this grid coordinate is in the TileMap
@@ -1327,6 +1497,7 @@ class Game:
         # Draw a yellow highlight above the voxel
         pygame.draw.polygon(self.surfs['surf_game_art'], Color(200,200,100), points_zh)
 
+    # Called in VoxelArtwork.render()
     def render_grid_tile_highlighted_at_mouse(self) -> None:
         """Display mouse location by highlighting the grid square the mouse is hovering over."""
         G = self.grid.xfm_pg(pygame.mouse.get_pos())
