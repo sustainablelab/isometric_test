@@ -24,7 +24,8 @@
     * [x] Player stays on top of the wall instead of falling through
     * [x] Player shadow is on the voxel (if any) under the player
     * [x] Player can walk off a wall
-    * [ ] Player can walk on a wall (need to consider height difference in collision detection)
+    * [x] Player can walk on a wall (need to consider height difference in collision detection)
+    * [ ] Player can walk up and down steps
 [ ] Include spell casting
     * [x] ':' to start spell casting
     * [x] keystrokes appear at bottom of screen
@@ -711,9 +712,14 @@ class VoxelArtwork:
             if voxel_index == player_draw_index:
                 # Draw player
                 player.render(surf)
+        # DEBUG
+        ### DebugHud.add_text(debug_text:str)
         if self.game.debug_hud:
             self.game.debug_hud.add_text(f"player_draw_index: {player_draw_index}")
             self.game.debug_hud.add_text(f"len(voxels): {len(voxels)}")
+            self.game.debug_hud.add_text(
+                    f"player.pos: ({player.pos[0]:.1f},{player.pos[1]:.1f},z={player.z:.1f})")
+
         # If mouse is in front of all voxels, player has not been drawn yet!
         if mouse_draw_index >= len(voxels):
             self.game.render_grid_tile_highlighted_at_mouse()
@@ -1123,6 +1129,7 @@ class Game:
             # Collision detection
             neighbor_x = int(self.player.pos[0])
             # Going down? Look 1 tile "below" player
+            # To look "below", comparison depends on whether player y is + or -
             if self.player.pos[1] < 0:
                 # Example: player_y = -10.8, 1 tile below y=-11
                 neighbor_y = int(self.player.pos[1]) - 1
@@ -1133,7 +1140,15 @@ class Game:
             #     if (neighbor_x,neighbor_y) in wall.points:
             #         self.player.pos = (pos[0], neighbor_y+1)
             if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                self.player.pos = (pos[0], neighbor_y+1)
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (pos[0], neighbor_y+1)
         if self.keys['key_k']:
             # GO UP
             pos = self.player.pos
@@ -1155,7 +1170,15 @@ class Game:
             #     if (neighbor_x,neighbor_y) in wall.points:
             #         self.player.pos = (pos[0], neighbor_y-1)
             if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                self.player.pos = (pos[0], neighbor_y-1)
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (pos[0], neighbor_y-1)
         if self.keys['key_h']:
             # GO LEFT
             pos = self.player.pos
@@ -1176,7 +1199,15 @@ class Game:
             #     if (neighbor_x,neighbor_y) in wall.points:
             #         self.player.pos = (neighbor_x+1, pos[1])
             if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                self.player.pos = (neighbor_x+1, pos[1])
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (neighbor_x+1, pos[1])
         if self.keys['key_l']:
             # GO RIGHT
             pos = self.player.pos
@@ -1197,7 +1228,15 @@ class Game:
             #     if (neighbor_x,neighbor_y) in wall.points:
             #         self.player.pos = (neighbor_x-1, pos[1])
             if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                self.player.pos = (neighbor_x-1, pos[1])
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (neighbor_x-1, pos[1])
 
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
