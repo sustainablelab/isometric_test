@@ -46,7 +46,16 @@
     [x] Refactor VoxelArtwork to describe voxels as dicts rather than lists
         * Ah, but I still need a list to iterate over for draw-order.
     [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
-
+[ ] Refactor collision detection out to its own section
+    [ ] use keys dict to set a moves dict
+    [ ] then handle collision detection in its own function that just uses the moves dict
+[ ] Add controls for moving in steps:
+    [ ] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
+    [ ] h,j,k,l become moving to discrete tiles
+        [ ] if the player is not on a discrete tile, this key puts them onto one
+        [ ] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
+            is just for dev so I have a way to nudge the character without
+            collision detection rules 
 """
 
 import sys
