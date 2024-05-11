@@ -20,6 +20,7 @@
     [x] Refactor VoxelArtwork to describe voxels as dicts rather than lists
         * Ah, but I still need a list to iterate over for draw-order.
     [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
+[ ] Draw steps
 [ ] Refactor collision detection out to its own section
     [x] use keys dict to set a moves dict
     [ ] then handle collision detection in its own function that just uses the moves dict
@@ -47,7 +48,7 @@
     * [x] Player shadow is on the voxel (if any) under the player
     * [x] Player can walk off a wall
     * [x] Player can walk on a wall (need to consider height difference in collision detection)
-    * [ ] Player can walk up and down steps
+    * [x] Player can walk up and down steps
 [ ] Include spell casting
     * [x] ':' to start spell casting
     * [x] keystrokes appear at bottom of screen
@@ -208,6 +209,7 @@ class Player:
         self.moving = False
         # TODO: sign of z-direction always confuses me, e.g., look at self.z in render_romanized_chars
         self.z = 0                                      # Position in z-direction
+        self.zclimbmax = 3                              # Max amt player can climb -- determines max height of steps
         self.dz = 0                                     # Speed in z-direction
         self.voxel = None                               # The voxel at the player's location (e.g., standing on a wall)
         self.is_casting = False
@@ -1432,15 +1434,12 @@ class Game:
             else:
                 # Example: player_y = +10.8, 1 tile below y=+10
                 neighbor_y = int(self.player.pos[1])
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (pos[0], neighbor_y+1)
             if (neighbor_x,neighbor_y) in self.tile_map.layout:
                 # There is a tile there.
                 # Now check if the top of this tile is too high for the player to get onto
                 G = (neighbor_x, neighbor_y)
                 tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
+                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
                 # TODO: make "too_high" a little higher than same height
                 if too_high:
                     # Block the player from moving here
@@ -1471,7 +1470,7 @@ class Game:
                 # Now check if the top of this tile is too high for the player to get onto
                 G = (neighbor_x, neighbor_y)
                 tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
+                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
                 # TODO: make "too_high" a little higher than same height
                 if too_high:
                     # Block the player from moving here
@@ -1529,7 +1528,7 @@ class Game:
                 # Now check if the top of this tile is too high for the player to get onto
                 G = (neighbor_x, neighbor_y)
                 tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
+                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
                 # TODO: make "too_high" a little higher than same height
                 if too_high:
                     # Block the player from moving here
