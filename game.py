@@ -9,6 +9,28 @@
 [x] Add gravity to player
 [x] Add player levitation (infinite jump)
 [x] Draw a shadow under the player
+[x] Refactor: pull logic out of rendering
+    * Rendering should only be responsible for draw order!
+    * Calculate info necessary for rendering before the one big render call
+    * Example:
+        * in its current state, I cannot render the mouse cursor "under" the
+        player without also putting it "under" the voxel that the player is
+        standing on
+    [x] Refactor TileMap to be a dict of grid locations rather than a list of walls
+    [x] Refactor VoxelArtwork to describe voxels as dicts rather than lists
+        * Ah, but I still need a list to iterate over for draw-order.
+    [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
+[ ] Refactor collision detection out to its own section
+    [x] use keys dict to set a moves dict
+    [ ] then handle collision detection in its own function that just uses the moves dict
+[ ] Add controls for moving in steps:
+    [ ] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
+    [ ] h,j,k,l become moving to discrete tiles
+        [ ] if the player is not on a discrete tile, this key puts them onto one
+        [ ] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
+            is just for dev so I have a way to nudge the character without
+            collision detection rules 
+
 [x] Draw a floor
     [ ] Give floor same color gradient effect that I put on the grid
 [x] Add a Help HUD
@@ -35,27 +57,6 @@
     * [ ] start a newline if romanized chars extend too far
     * [ ] make color of romanized chars adjustable
     * [ ] add more characters (Kurt added letter 'z')
-[ ] Refactor: pull logic out of rendering
-    * Rendering should only be responsible for draw order!
-    * Calculate info necessary for rendering before the one big render call
-    * Example:
-        * in its current state, I cannot render the mouse cursor "under" the
-        player without also putting it "under" the voxel that the player is
-        standing on
-    [x] Refactor TileMap to be a dict of grid locations rather than a list of walls
-    [x] Refactor VoxelArtwork to describe voxels as dicts rather than lists
-        * Ah, but I still need a list to iterate over for draw-order.
-    [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
-[ ] Refactor collision detection out to its own section
-    [ ] use keys dict to set a moves dict
-    [ ] then handle collision detection in its own function that just uses the moves dict
-[ ] Add controls for moving in steps:
-    [ ] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
-    [ ] h,j,k,l become moving to discrete tiles
-        [ ] if the player is not on a discrete tile, this key puts them onto one
-        [ ] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
-            is just for dev so I have a way to nudge the character without
-            collision detection rules 
 """
 
 import sys
@@ -99,6 +100,11 @@ def define_surfaces(os_window:OsWindow) -> dict:
     surfs['surf_romanized_chars'] = None
 
     return surfs
+
+def define_actions() -> dict:
+    actions = {}
+    actions['action_levitate'] = False
+    return actions
 
 def define_moves() -> dict:
     moves = {}
@@ -905,7 +911,8 @@ class Game:
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces (including pygame.display)
         pygame.display.set_caption("Isometric grid test")
         self.colors = define_colors()                   # Dict of Pygame Colors
-        self.moves = define_moves()                     # Dict of moves
+        self.actions = define_actions()                 # Dict of player actions (what to do when Space is pressed)
+        self.moves = define_moves()                     # Dict of player movements
         self.keys = define_held_keys()                  # Dict of which keyboard inputs are being held down
         self.settings = define_settings()               # Dict of settings
         pygame.mouse.set_visible(False)                 # Hide the OS mouse icon
@@ -942,6 +949,8 @@ class Game:
         self.handle_ui_events()
 
         self.update_held_keys_effects()
+        self.update_player_actions()
+        self.update_player_movement()
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
@@ -1353,15 +1362,13 @@ class Game:
         self.update_held_keys_effects_grid_xfm()
         self.update_held_keys_effects_player_movement()
 
+        # Pick what action to do when Space is held
+        self.actions['action_levitate'] = self.keys['key_Space']
+
         # Randomize voxel artwork if Shift+Space is held
         if self.keys['key_Shift_Space']:
             # self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
             self.voxel_artwork.layout = self.voxel_artwork.make_voxels_from_tile_map()
-
-        # Levitate player if Space is held
-        if self.keys['key_Space']:
-            self.player.dz = 0                          # reset velocity (turn off gravity)
-            self.player.z -= self.player.speed_rise     # levitate
 
     def update_held_keys_effects_grid_xfm(self) -> None:
         # Update transform based on key presses
@@ -1389,13 +1396,25 @@ class Game:
         if self.keys['key_f']: self.grid.f -= 1
 
     def update_held_keys_effects_player_movement(self) -> None:
-        # Player movement
-        if self.keys['key_j']:
-            self.moves['move_down'] = True
-        else:
-            self.moves['move_down'] = False
-        if self.keys['key_j']:
-            # GO DOWN
+        self.moves['move_down']  = self.keys['key_j']
+        self.moves['move_up']    = self.keys['key_k']
+        self.moves['move_left']  = self.keys['key_h']
+        self.moves['move_right'] = self.keys['key_l']
+
+    # TODO: move to Player
+    def update_player_actions(self) -> None:
+        # Levitate player if Space is held
+        if self.actions['action_levitate']:
+            self.player.dz = 0                          # reset velocity (turn off gravity)
+            self.player.z -= self.player.speed_rise     # levitate
+
+    # TODO: move to Player
+    def update_player_movement(self) -> None:
+        # DEBUG moves
+        if self.debug_hud:
+            self.debug_hud.add_text(f"self.moves: {self.moves}")
+
+        if self.moves['move_down']:
             pos = self.player.pos
             speed = self.player.speed_walk
             # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
@@ -1426,11 +1445,8 @@ class Game:
                 if too_high:
                     # Block the player from moving here
                     self.player.pos = (pos[0], neighbor_y+1)
-        if self.keys['key_k']:
-            self.moves['move_up'] = True
-        else:
-            self.moves['move_up'] = False
-        if self.keys['key_k']:
+
+        if self.moves['move_up']:
             # GO UP
             pos = self.player.pos
             speed = self.player.speed_walk
@@ -1460,12 +1476,8 @@ class Game:
                 if too_high:
                     # Block the player from moving here
                     self.player.pos = (pos[0], neighbor_y-1)
-        if self.keys['key_h']:
-            self.moves['move_left'] = True
-        else:
-            self.moves['move_left'] = False
-        if self.keys['key_h']:
-            # GO LEFT
+
+        if self.moves['move_left']:
             pos = self.player.pos
             speed = self.player.speed_walk
             # Scale walking speed if moving LEFT+UP or LEFT+DOWN
@@ -1493,12 +1505,8 @@ class Game:
                 if too_high:
                     # Block the player from moving here
                     self.player.pos = (neighbor_x+1, pos[1])
-        if self.keys['key_l']:
-            self.moves['move_right'] = True
-        else:
-            self.moves['move_right'] = False
-        if self.keys['key_l']:
-            # GO RIGHT
+
+        if self.moves['move_right']:
             pos = self.player.pos
             speed = self.player.speed_walk
             # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
@@ -1526,9 +1534,6 @@ class Game:
                 if too_high:
                     # Block the player from moving here
                     self.player.pos = (neighbor_x-1, pos[1])
-        # DEBUG moves
-        if self.debug_hud:
-            self.debug_hud.add_text(f"self.moves: {self.moves}")
 
 
     def update_mouse_height(self) -> None:
