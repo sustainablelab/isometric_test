@@ -100,8 +100,16 @@ def define_surfaces(os_window:OsWindow) -> dict:
 
     return surfs
 
-def define_keys() -> dict:
-    """Return a dict to track which unicode values are being pressed.
+def define_moves() -> dict:
+    moves = {}
+    moves['move_down']  = False
+    moves['move_up']    = False
+    moves['move_right'] = False
+    moves['move_left']  = False
+    return moves
+
+def define_held_keys() -> dict:
+    """Return a dict to track which keys are held down.
 
     These are the keys, and their Shifted versions, that continue to have
     effect while held.
@@ -897,7 +905,8 @@ class Game:
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces (including pygame.display)
         pygame.display.set_caption("Isometric grid test")
         self.colors = define_colors()                   # Dict of Pygame Colors
-        self.keys = define_keys()                       # Dict of which keyboard inputs are being pressed
+        self.moves = define_moves()                     # Dict of moves
+        self.keys = define_held_keys()                  # Dict of which keyboard inputs are being held down
         self.settings = define_settings()               # Dict of settings
         pygame.mouse.set_visible(False)                 # Hide the OS mouse icon
 
@@ -924,10 +933,15 @@ class Game:
         else:
             self.debug_hud = None
 
+        # Update things affected by gravity
+        self.update_gravity_effects()
+
         # Handle keyboard and mouse
         # Zoom by scrolling the mouse wheel
         # TODO: pan by pressing the mouse wheel or left-clicking
         self.handle_ui_events()
+
+        self.update_held_keys_effects()
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
@@ -960,7 +974,7 @@ class Game:
         if self.debug_hud:
             self.debug_hud.add_text(f"self.player.voxel: {self.player.voxel}")
 
-        # self.render_mouse_location()
+        # self.render_mouse_location_as_white_circle()
         # Use the power of xfm_gp()
         # self.render_grid_tile_highlighted_at_mouse()
         self.update_mouse_height()
@@ -1032,6 +1046,22 @@ class Game:
         ### clock.tick(framerate=0) -> milliseconds
         self.clock.tick(60)
 
+    def update_gravity_effects(self) -> None:
+        # Account for gravity
+        self.player.dz = min(self.max_fall_speed, self.player.dz+self.gravity) # acceleration updates velocity
+        self.player.z += self.player.dz                 # velocity updates position
+
+        # Stop falling if player is standing on something
+        floor_height = 0
+        if self.player.voxel != None:
+            floor_height = -1*self.player.voxel['height']*self.grid.scale
+            if self.debug_hud: self.debug_hud.add_text(f"floor_height: {floor_height}")
+        if self.player.z > floor_height:
+            # z > 0 means player is BELOW the floor
+            self.player.z = floor_height                # reset position
+            self.player.dz = 0                          # reset velocity
+
+
     def handle_ui_events(self) -> None:
         for event in pygame.event.get():
             match event.type:
@@ -1081,191 +1111,20 @@ class Game:
                 # Log any other events
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
-        # Randomize voxel artwork if Shift+Space is held
-        if self.keys['key_Shift_Space']:
-            # self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
-            self.voxel_artwork.layout = self.voxel_artwork.make_voxels_from_tile_map()
-        # Account for gravity
-        self.player.dz = min(self.max_fall_speed, self.player.dz+self.gravity) # acceleration updates velocity
-        self.player.z += self.player.dz                 # velocity updates position
-        # Levitate player if Space is held
-        if self.keys['key_Space']:
-            self.player.dz = 0                          # reset velocity (turn off gravity)
-            self.player.z -= self.player.speed_rise     # levitate
-        # Stop falling if player is standing on something
-        floor_height = 0
-        if self.player.voxel != None:
-            floor_height = -1*self.player.voxel['height']*self.grid.scale
-            if self.debug_hud: self.debug_hud.add_text(f"floor_height: {floor_height}")
-        if self.player.z > floor_height:
-            # z > 0 means player is BELOW the floor
-            self.player.z = floor_height                # reset position
-            self.player.dz = 0                          # reset velocity
-
-        # Update transform based on key presses
-        # U = 20; L = -20                                 # Upper/Lower bounds
-        # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
-        # if self.keys['key_B']: self.grid.b = min(U, self.grid.b+1)
-        # if self.keys['key_C']: self.grid.c = min(U, self.grid.c+1)
-        # if self.keys['key_D']: self.grid.d = min(U, self.grid.d+1)
-        # if self.keys['key_a']: self.grid.a = max(L, self.grid.a-1)
-        # if self.keys['key_b']: self.grid.b = max(L, self.grid.b-1)
-        # if self.keys['key_c']: self.grid.c = max(L, self.grid.c-1)
-        # if self.keys['key_d']: self.grid.d = max(L, self.grid.d-1)
-        # Update transform based on key presses
-        if self.keys['key_A']: self.grid.a += 1
-        if self.keys['key_B']: self.grid.b += 1
-        if self.keys['key_C']: self.grid.c += 1
-        if self.keys['key_D']: self.grid.d += 1
-        if self.keys['key_a']: self.grid.a -= 1
-        if self.keys['key_b']: self.grid.b -= 1
-        if self.keys['key_c']: self.grid.c -= 1
-        if self.keys['key_d']: self.grid.d -= 1
-        if self.keys['key_E']: self.grid.e += 1
-        if self.keys['key_e']: self.grid.e -= 1
-        if self.keys['key_F']: self.grid.f += 1
-        if self.keys['key_f']: self.grid.f -= 1
-        # Player movement
-        if self.keys['key_j']:
-            # GO DOWN
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
-            if self.keys['key_h'] or self.keys['key_l']:
-                speed *= 0.7
-            # Set new position
-            self.player.pos = (pos[0],                      pos[1] - speed)
-            # Collision detection
-            neighbor_x = int(self.player.pos[0])
-            # Going down? Look 1 tile "below" player
-            # To look "below", comparison depends on whether player y is + or -
-            if self.player.pos[1] < 0:
-                # Example: player_y = -10.8, 1 tile below y=-11
-                neighbor_y = int(self.player.pos[1]) - 1
-            else:
-                # Example: player_y = +10.8, 1 tile below y=+10
-                neighbor_y = int(self.player.pos[1])
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (pos[0], neighbor_y+1)
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (pos[0], neighbor_y+1)
-        if self.keys['key_k']:
-            # GO UP
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving UP+LEFT or UP+RIGHT
-            if self.keys['key_h'] or self.keys['key_l']:
-                speed *= 0.7
-            self.player.pos = (pos[0],                      pos[1] + speed)
-            # Collision detection
-            neighbor_x = int(self.player.pos[0])
-            # Going up? Look 1 tile "above" player
-            if self.player.pos[1] < 0:
-                # Example: player_y = -10.8, 1 tile above y=-10
-                neighbor_y = int(self.player.pos[1])
-            else:
-                # Example: player_y = +10.8, 1 tile above y=+11
-                neighbor_y = int(self.player.pos[1]) + 1
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (pos[0], neighbor_y-1)
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (pos[0], neighbor_y-1)
-        if self.keys['key_h']:
-            # GO LEFT
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving LEFT+UP or LEFT+DOWN
-            if self.keys['key_k'] or self.keys['key_j']:
-                speed *= 0.7
-            self.player.pos = (pos[0] - speed,  pos[1])
-            # Collision detection
-            neighbor_y = int(self.player.pos[1])
-            if self.player.pos[0] < 0:
-                # Example: Player_x = -10.8, 1 tile left x=-11
-                neighbor_x = int(self.player.pos[0] - 1)
-            else:
-                # Example player_x = +10.8, 1 tile left x=+10
-                neighbor_x = int(self.player.pos[0])
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (neighbor_x+1, pos[1])
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (neighbor_x+1, pos[1])
-        if self.keys['key_l']:
-            # GO RIGHT
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
-            if self.keys['key_k'] or self.keys['key_j']:
-                speed *= 0.7
-            self.player.pos = (pos[0] + speed,  pos[1])
-            # Collision detection
-            neighbor_y = int(self.player.pos[1])
-            if self.player.pos[0] < 0:
-                # Example: Player_x = -10.8, 1 tile right x=-10
-                neighbor_x = int(self.player.pos[0])
-            else:
-                # Example player_x = +10.8, 1 tile right x=+11
-                neighbor_x = int(self.player.pos[0] + 1)
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (neighbor_x-1, pos[1])
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (neighbor_x-1, pos[1])
 
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
+        # Key behavior is modal: keyup has no significance while casting
         if not self.player.is_casting:
             match event.key:
                 case pygame.K_LSHIFT:
-                    if self.keys['key_Shift_Space']:
-                        self.keys['key_Shift_Space'] = False
-                    if self.keys['key_A']:
-                        self.keys['key_A'] = False
-                    if self.keys['key_B']:
-                        self.keys['key_B'] = False
-                    if self.keys['key_C']:
-                        self.keys['key_C'] = False
-                    if self.keys['key_D']:
-                        self.keys['key_D'] = False
-                    if self.keys['key_E']:
-                        self.keys['key_E'] = False
-                    if self.keys['key_F']:
-                        self.keys['key_F'] = False
+                    self.keys['key_Shift_Space'] = False
+                    self.keys['key_A'] = False
+                    self.keys['key_B'] = False
+                    self.keys['key_C'] = False
+                    self.keys['key_D'] = False
+                    self.keys['key_E'] = False
+                    self.keys['key_F'] = False
                 case pygame.K_SPACE:
                     self.keys['key_Space'] = False
                     self.keys['key_Shift_Space'] = False
@@ -1300,190 +1159,378 @@ class Game:
                     pass
 
     def handle_keydown(self, event) -> None:
-        kmod = pygame.key.get_mods()                    # Which modifier keys are held
+        # Key behavior is modal
         if self.player.is_casting:
-            match event.key:
-                case pygame.K_RETURN:
-                    # Cast this spell
-                    self.player.spell = self.player.keystrokes.lstrip(":")
-                    self.player.keystrokes = ""
-                    self.player.is_casting = False
-                case pygame.K_ESCAPE:
-                    # Abort casting
-                    self.player.keystrokes = ""
-                    self.player.is_casting = False
-                case pygame.K_BACKSPACE:
-                    self.player.keystrokes = self.player.keystrokes[0:-1]
-                case pygame.K_a:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.player.keystrokes += 'á'
-                    else:
-                        self.player.keystrokes += event.unicode
-                case pygame.K_e:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.player.keystrokes += 'é'
-                    else:
-                        self.player.keystrokes += event.unicode
-                case pygame.K_c:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.player.keystrokes += 'ċ'
-                    else:
-                        self.player.keystrokes += event.unicode
-                case pygame.K_l:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.player.keystrokes += 'L' # 'ļ' json.decoder.JSONDecodeError: Invalid control character
-                    elif kmod & pygame.KMOD_ALT:
-                        self.player.keystrokes += 'T' # 'ł' json.decoder.JSONDecodeError: Invalid control character
-                    else:
-                        self.player.keystrokes += event.unicode
-                case _:
-                    self.player.keystrokes += event.unicode            # Append key-stroke
-                    logger.debug(f"self.player.keystrokes: {self.player.keystrokes}")
+            self.handle_keydown_casting(event)
         else:
-            match event.key:
-                case pygame.K_q: sys.exit()                 # q - Quit
-                case pygame.K_SEMICOLON:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.player.is_casting = True
-                case pygame.K_F1:
-                    self.settings['setting_show_help'] = not self.settings['setting_show_help']
-                case pygame.K_F2:                           # F2 - Toggle Debug
-                    self.settings['setting_debug'] = not self.settings['setting_debug']
-                # TEMPORARY adjust percentage that voxels cover tiles
-                case pygame.K_UP:
-                    self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
-                case pygame.K_DOWN:
-                    self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
-                case pygame.K_r:
-                    # Reset view back to initial view after changing Xfm matrix values (a,b,c,d,e,f,zoom)
-                    self.grid.reset()
-                case pygame.K_z:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.grid.zoom_in()
-                    else:
-                        self.grid.zoom_out()
-                # TEMPORARY player movement
-                # case pygame.K_j:
-                #     pos = self.player.pos
-                #     self.player.pos = (pos[0],pos[1] - 1)
-                #     logger.debug("Move Down")
-                # case pygame.K_k:
-                #     pos = self.player.pos
-                #     self.player.pos = (pos[0],pos[1] + 1)
-                #     logger.debug("Move Up")
-                # case pygame.K_h:
-                #     pos = self.player.pos
-                #     self.player.pos = (pos[0] - 1 , pos[1])
-                #     logger.debug("Move Left")
-                # case pygame.K_l:
-                #     pos = self.player.pos
-                #     self.player.pos = (pos[0] + 1 , pos[1])
-                #     logger.debug("Move Right")
-                # TEMPORARY: Print name of keys that have no unicode representation.
-                case pygame.K_RETURN: logger.debug("Return")
-                case pygame.K_ESCAPE: logger.debug("Esc")
-                case pygame.K_BACKSPACE: logger.debug("Backspace")
-                case pygame.K_DELETE: logger.debug("Delete")
-                case pygame.K_F3: logger.debug("F3")
-                case pygame.K_F4: logger.debug("F4")
-                case pygame.K_F5: logger.debug("F5")
-                case pygame.K_F6: logger.debug("F6")
-                case pygame.K_F7: logger.debug("F7")
-                case pygame.K_F8: logger.debug("F8")
-                case pygame.K_F9: logger.debug("F9")
-                case pygame.K_F10: logger.debug("F10")
-                case pygame.K_F11: logger.debug("F11")
-                case pygame.K_F12: logger.debug("F12")
-                case pygame.K_LSHIFT: logger.debug("Left Shift")
-                case pygame.K_RSHIFT: logger.debug("Right Shift")
-                case pygame.K_LALT: logger.debug("Left Alt")
-                case pygame.K_RALT: logger.debug("Right Alt")
-                case pygame.K_LCTRL: logger.debug("Left Ctrl")
-                case pygame.K_RCTRL: logger.debug("Right Ctrl")
-                case pygame.K_SPACE:
-                    if kmod & pygame.KMOD_SHIFT:
-                        # TEMPORARY randomize voxel artwork
-                        self.keys['key_Shift_Space'] = True
-                    else:
-                        # TEMPORARY levitate player
-                        self.keys['key_Space'] = True
-                # TEMPORARY manipulate the xfm matrix
-                case pygame.K_a:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.keys['key_A'] = True
-                    else:
-                        self.keys['key_a'] = True
-                case pygame.K_b:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.keys['key_B'] = True
-                    else:
-                        self.keys['key_b'] = True
-                case pygame.K_c:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.keys['key_C'] = True
-                    else:
-                        self.keys['key_c'] = True
-                case pygame.K_d:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.keys['key_D'] = True
-                    else:
-                        self.keys['key_d'] = True
-                case pygame.K_e:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.keys['key_E'] = True
-                    else:
-                        self.keys['key_e'] = True
-                case pygame.K_f:
-                    if kmod & pygame.KMOD_SHIFT:
-                        self.keys['key_F'] = True
-                    else:
-                        self.keys['key_f'] = True
-                # TEMPORARY: player movement
-                case pygame.K_j: # Move Down
-                    if kmod & pygame.KMOD_SHIFT:
-                        # 'Shift+J' nudges player
-                        pos = self.player.pos
-                        self.player.pos = (pos[0],                      pos[1] - self.player.speed_walk)
-                    else:
-                        self.keys['key_j'] = True
-                case pygame.K_k: # Move Up
-                    if kmod & pygame.KMOD_SHIFT:
-                        # 'Shift+K' nudges player
-                        pos = self.player.pos
-                        self.player.pos = (pos[0],                      pos[1] + self.player.speed_walk)
-                    else:
-                        self.keys['key_k'] = True
-                case pygame.K_h: # Move Left
-                    if kmod & pygame.KMOD_SHIFT:
-                        # 'Shift+H' nudges player
-                        pos = self.player.pos
-                        self.player.pos = (pos[0] - self.player.speed_walk,  pos[1])
-                    else:
-                        self.keys['key_h'] = True
-                case pygame.K_l: # Move Right
-                    if kmod & pygame.KMOD_SHIFT:
-                        # 'Shift+L' nudges player
-                        pos = self.player.pos
-                        self.player.pos = (pos[0] + self.player.speed_walk,  pos[1])
-                    else:
-                        self.keys['key_l'] = True
-                case _:
-                    # Print unicode for the pressed key or key combo:
-                    #       'A' prints "a"        '1' prints "1"
-                    # 'Shift+A' prints "A"  'Shift+1' prints "!"
-                    logger.debug(f"{event.unicode}")
+            self.handle_keydown_held_keys(event)
+            self.handle_keydown_single_shot(event)
 
-    def render_mouse_location(self) -> None:
-        """Display mouse location with a white, transparent, hollow circle."""
-        mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
-        radius=10
-        ### Surface((width, height), flags=0, Surface) -> Surface
-        surf = pygame.Surface((2*radius,2*radius), flags=pygame.SRCALPHA)
-        ### circle(surface, color, center, radius, width=0) -> Rect
-        pygame.draw.circle(surf, Color(255,255,255,100), (radius,radius), radius, width=2)
-        self.surfs['surf_game_art'].blit(surf, mpos_p, special_flags=pygame.BLEND_ALPHA_SDL2)
+    def handle_keydown_casting(self, event) -> None:
+        kmod = pygame.key.get_mods()                    # Which modifier keys are held
+        match event.key:
+            case pygame.K_RETURN:
+                # Cast this spell
+                self.player.spell = self.player.keystrokes.lstrip(":")
+                self.player.keystrokes = ""
+                self.player.is_casting = False
+            case pygame.K_ESCAPE:
+                # Abort casting
+                self.player.keystrokes = ""
+                self.player.is_casting = False
+            case pygame.K_BACKSPACE:
+                self.player.keystrokes = self.player.keystrokes[0:-1]
+            case pygame.K_a:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.player.keystrokes += 'á'
+                else:
+                    self.player.keystrokes += event.unicode
+            case pygame.K_e:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.player.keystrokes += 'é'
+                else:
+                    self.player.keystrokes += event.unicode
+            case pygame.K_c:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.player.keystrokes += 'ċ'
+                else:
+                    self.player.keystrokes += event.unicode
+            case pygame.K_l:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.player.keystrokes += 'L' # 'ļ' json.decoder.JSONDecodeError: Invalid control character
+                elif kmod & pygame.KMOD_ALT:
+                    self.player.keystrokes += 'T' # 'ł' json.decoder.JSONDecodeError: Invalid control character
+                else:
+                    self.player.keystrokes += event.unicode
+            case _:
+                self.player.keystrokes += event.unicode            # Append key-stroke
+                logger.debug(f"self.player.keystrokes: {self.player.keystrokes}")
 
-    # TODO: move this rendering into VoxelArtwork.render
+    def handle_keydown_single_shot(self, event) -> None:
+        kmod = pygame.key.get_mods()                    # Which modifier keys are held
+        # Handle single-shot key presses
+        match event.key:
+            case pygame.K_q: sys.exit()                 # q - Quit
+            case pygame.K_SEMICOLON:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.player.is_casting = True
+            case pygame.K_F1:
+                self.settings['setting_show_help'] = not self.settings['setting_show_help']
+            case pygame.K_F2:                           # F2 - Toggle Debug
+                self.settings['setting_debug'] = not self.settings['setting_debug']
+            # TEMPORARY adjust percentage that voxels cover tiles
+            case pygame.K_UP:
+                self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
+            case pygame.K_DOWN:
+                self.voxel_artwork.percentage = max(0.0, self.voxel_artwork.percentage - 0.1)
+            case pygame.K_r:
+                # Reset view back to initial view after changing Xfm matrix values (a,b,c,d,e,f,zoom)
+                self.grid.reset()
+            case pygame.K_z:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.grid.zoom_in()
+                else:
+                    self.grid.zoom_out()
+            # TEMPORARY player movement
+            # case pygame.K_j:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0],pos[1] - 1)
+            #     logger.debug("Move Down")
+            # case pygame.K_k:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0],pos[1] + 1)
+            #     logger.debug("Move Up")
+            # case pygame.K_h:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0] - 1 , pos[1])
+            #     logger.debug("Move Left")
+            # case pygame.K_l:
+            #     pos = self.player.pos
+            #     self.player.pos = (pos[0] + 1 , pos[1])
+            #     logger.debug("Move Right")
+            # TEMPORARY: Print name of keys that have no unicode representation.
+            case pygame.K_RETURN: logger.debug("Return")
+            case pygame.K_ESCAPE: logger.debug("Esc")
+            case pygame.K_BACKSPACE: logger.debug("Backspace")
+            case pygame.K_DELETE: logger.debug("Delete")
+            case pygame.K_F3: logger.debug("F3")
+            case pygame.K_F4: logger.debug("F4")
+            case pygame.K_F5: logger.debug("F5")
+            case pygame.K_F6: logger.debug("F6")
+            case pygame.K_F7: logger.debug("F7")
+            case pygame.K_F8: logger.debug("F8")
+            case pygame.K_F9: logger.debug("F9")
+            case pygame.K_F10: logger.debug("F10")
+            case pygame.K_F11: logger.debug("F11")
+            case pygame.K_F12: logger.debug("F12")
+            case pygame.K_LSHIFT: logger.debug("Left Shift")
+            case pygame.K_RSHIFT: logger.debug("Right Shift")
+            case pygame.K_LALT: logger.debug("Left Alt")
+            case pygame.K_RALT: logger.debug("Right Alt")
+            case pygame.K_LCTRL: logger.debug("Left Ctrl")
+            case pygame.K_RCTRL: logger.debug("Right Ctrl")
+            case _:
+                # Print unicode for the pressed key or key combo:
+                #       'A' prints "a"        '1' prints "1"
+                # 'Shift+A' prints "A"  'Shift+1' prints "!"
+                logger.debug(f"{event.unicode}")
+
+    def handle_keydown_held_keys(self, event) -> None:
+        kmod = pygame.key.get_mods()                    # Which modifier keys are held
+        match event.key:
+            case pygame.K_SPACE:
+                if kmod & pygame.KMOD_SHIFT:
+                    # TEMPORARY randomize voxel artwork
+                    self.keys['key_Shift_Space'] = True
+                else:
+                    # TEMPORARY levitate player
+                    self.keys['key_Space'] = True
+            # TEMPORARY manipulate the xfm matrix
+            case pygame.K_a:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_A'] = True
+                else:
+                    self.keys['key_a'] = True
+            case pygame.K_b:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_B'] = True
+                else:
+                    self.keys['key_b'] = True
+            case pygame.K_c:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_C'] = True
+                else:
+                    self.keys['key_c'] = True
+            case pygame.K_d:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_D'] = True
+                else:
+                    self.keys['key_d'] = True
+            case pygame.K_e:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_E'] = True
+                else:
+                    self.keys['key_e'] = True
+            case pygame.K_f:
+                if kmod & pygame.KMOD_SHIFT:
+                    self.keys['key_F'] = True
+                else:
+                    self.keys['key_f'] = True
+            # TEMPORARY: player movement
+            case pygame.K_j: # Move Down
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+J' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0],                      pos[1] - self.player.speed_walk)
+                else:
+                    self.keys['key_j'] = True
+            case pygame.K_k: # Move Up
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+K' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0],                      pos[1] + self.player.speed_walk)
+                else:
+                    self.keys['key_k'] = True
+            case pygame.K_h: # Move Left
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+H' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0] - self.player.speed_walk,  pos[1])
+                else:
+                    self.keys['key_h'] = True
+            case pygame.K_l: # Move Right
+                if kmod & pygame.KMOD_SHIFT:
+                    # 'Shift+L' nudges player
+                    pos = self.player.pos
+                    self.player.pos = (pos[0] + self.player.speed_walk,  pos[1])
+                else:
+                    self.keys['key_l'] = True
+            case _:
+                pass
+
+
+    def update_held_keys_effects(self) -> None:
+        self.update_held_keys_effects_grid_xfm()
+        self.update_held_keys_effects_player_movement()
+
+        # Randomize voxel artwork if Shift+Space is held
+        if self.keys['key_Shift_Space']:
+            # self.voxel_artwork.layout = self.voxel_artwork.make_random_layout()
+            self.voxel_artwork.layout = self.voxel_artwork.make_voxels_from_tile_map()
+
+        # Levitate player if Space is held
+        if self.keys['key_Space']:
+            self.player.dz = 0                          # reset velocity (turn off gravity)
+            self.player.z -= self.player.speed_rise     # levitate
+
+    def update_held_keys_effects_grid_xfm(self) -> None:
+        # Update transform based on key presses
+        # U = 20; L = -20                                 # Upper/Lower bounds
+        # if self.keys['key_A']: self.grid.a = min(U, self.grid.a+1)
+        # if self.keys['key_B']: self.grid.b = min(U, self.grid.b+1)
+        # if self.keys['key_C']: self.grid.c = min(U, self.grid.c+1)
+        # if self.keys['key_D']: self.grid.d = min(U, self.grid.d+1)
+        # if self.keys['key_a']: self.grid.a = max(L, self.grid.a-1)
+        # if self.keys['key_b']: self.grid.b = max(L, self.grid.b-1)
+        # if self.keys['key_c']: self.grid.c = max(L, self.grid.c-1)
+        # if self.keys['key_d']: self.grid.d = max(L, self.grid.d-1)
+        # Update transform based on key presses
+        if self.keys['key_A']: self.grid.a += 1
+        if self.keys['key_B']: self.grid.b += 1
+        if self.keys['key_C']: self.grid.c += 1
+        if self.keys['key_D']: self.grid.d += 1
+        if self.keys['key_a']: self.grid.a -= 1
+        if self.keys['key_b']: self.grid.b -= 1
+        if self.keys['key_c']: self.grid.c -= 1
+        if self.keys['key_d']: self.grid.d -= 1
+        if self.keys['key_E']: self.grid.e += 1
+        if self.keys['key_e']: self.grid.e -= 1
+        if self.keys['key_F']: self.grid.f += 1
+        if self.keys['key_f']: self.grid.f -= 1
+
+    def update_held_keys_effects_player_movement(self) -> None:
+        # Player movement
+        if self.keys['key_j']:
+            self.moves['move_down'] = True
+        else:
+            self.moves['move_down'] = False
+        if self.keys['key_j']:
+            # GO DOWN
+            pos = self.player.pos
+            speed = self.player.speed_walk
+            # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
+            if self.keys['key_h'] or self.keys['key_l']:
+                speed *= 0.7
+            # Set new position
+            self.player.pos = (pos[0],                      pos[1] - speed)
+            # Collision detection
+            neighbor_x = int(self.player.pos[0])
+            # Going down? Look 1 tile "below" player
+            # To look "below", comparison depends on whether player y is + or -
+            if self.player.pos[1] < 0:
+                # Example: player_y = -10.8, 1 tile below y=-11
+                neighbor_y = int(self.player.pos[1]) - 1
+            else:
+                # Example: player_y = +10.8, 1 tile below y=+10
+                neighbor_y = int(self.player.pos[1])
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (pos[0], neighbor_y+1)
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (pos[0], neighbor_y+1)
+        if self.keys['key_k']:
+            self.moves['move_up'] = True
+        else:
+            self.moves['move_up'] = False
+        if self.keys['key_k']:
+            # GO UP
+            pos = self.player.pos
+            speed = self.player.speed_walk
+            # Scale walking speed if moving UP+LEFT or UP+RIGHT
+            if self.keys['key_h'] or self.keys['key_l']:
+                speed *= 0.7
+            self.player.pos = (pos[0],                      pos[1] + speed)
+            # Collision detection
+            neighbor_x = int(self.player.pos[0])
+            # Going up? Look 1 tile "above" player
+            if self.player.pos[1] < 0:
+                # Example: player_y = -10.8, 1 tile above y=-10
+                neighbor_y = int(self.player.pos[1])
+            else:
+                # Example: player_y = +10.8, 1 tile above y=+11
+                neighbor_y = int(self.player.pos[1]) + 1
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (pos[0], neighbor_y-1)
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (pos[0], neighbor_y-1)
+        if self.keys['key_h']:
+            self.moves['move_left'] = True
+        else:
+            self.moves['move_left'] = False
+        if self.keys['key_h']:
+            # GO LEFT
+            pos = self.player.pos
+            speed = self.player.speed_walk
+            # Scale walking speed if moving LEFT+UP or LEFT+DOWN
+            if self.keys['key_k'] or self.keys['key_j']:
+                speed *= 0.7
+            self.player.pos = (pos[0] - speed,  pos[1])
+            # Collision detection
+            neighbor_y = int(self.player.pos[1])
+            if self.player.pos[0] < 0:
+                # Example: Player_x = -10.8, 1 tile left x=-11
+                neighbor_x = int(self.player.pos[0] - 1)
+            else:
+                # Example player_x = +10.8, 1 tile left x=+10
+                neighbor_x = int(self.player.pos[0])
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (neighbor_x+1, pos[1])
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (neighbor_x+1, pos[1])
+        if self.keys['key_l']:
+            self.moves['move_right'] = True
+        else:
+            self.moves['move_right'] = False
+        if self.keys['key_l']:
+            # GO RIGHT
+            pos = self.player.pos
+            speed = self.player.speed_walk
+            # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
+            if self.keys['key_k'] or self.keys['key_j']:
+                speed *= 0.7
+            self.player.pos = (pos[0] + speed,  pos[1])
+            # Collision detection
+            neighbor_y = int(self.player.pos[1])
+            if self.player.pos[0] < 0:
+                # Example: Player_x = -10.8, 1 tile right x=-10
+                neighbor_x = int(self.player.pos[0])
+            else:
+                # Example player_x = +10.8, 1 tile right x=+11
+                neighbor_x = int(self.player.pos[0] + 1)
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (neighbor_x-1, pos[1])
+            if (neighbor_x,neighbor_y) in self.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.voxel_artwork.layout[G]['height']
+                too_high = self.player.z > -1*tile_height*self.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.player.pos = (neighbor_x-1, pos[1])
+        # DEBUG moves
+        if self.debug_hud:
+            self.debug_hud.add_text(f"self.moves: {self.moves}")
+
+
     def update_mouse_height(self) -> None:
         """Mouse height is the top of the voxel where the mouse is hovering."""
         G = self.grid.xfm_pg(pygame.mouse.get_pos())
@@ -1494,57 +1541,20 @@ class Game:
         # Store this height value for use elsewhere
         self.mouses['mouse_height'] = h
 
+    # BELOW HERE IS RENDERING FOR DEBUG / DEV
 
-    # Moved into VoxelArtwork.render()
-    def old_render_voxel_top_highlighted_at_mouse(self) -> None:
-        """Display mouse location by highlighting the top of the voxel where the mouse is hovering."""
-        G = self.grid.xfm_pg(pygame.mouse.get_pos())
-        # Check if this grid coordinate is in the TileMap
-        # tile_has_stuff = False
-        # for wall in self.tile_map.walls:
-        #     if G in wall.points:
-        #         tile_has_stuff = True
+    # NOT USED
+    def render_mouse_location_as_white_circle(self) -> None:
+        """Display mouse location with a white, transparent, hollow circle."""
+        mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
+        radius=10
+        ### Surface((width, height), flags=0, Surface) -> Surface
+        surf = pygame.Surface((2*radius,2*radius), flags=pygame.SRCALPHA)
+        ### circle(surface, color, center, radius, width=0) -> Rect
+        pygame.draw.circle(surf, Color(255,255,255,100), (radius,radius), radius, width=2)
+        self.surfs['surf_game_art'].blit(surf, mpos_p, special_flags=pygame.BLEND_ALPHA_SDL2)
 
-        # Check if this grid coordinate is in the VoxelArtwork
-        tile_has_stuff = False
-        self.mouses['mouse_height'] = 0
-        h = self.mouses['mouse_height']
-        for voxel in self.voxel_artwork.layout:
-            ### Example voxel:
-            ### [
-            ###  grid_points: [(20, -25), (21, -25), (21, -24), (20, -24)],
-            ###  height: 27,
-            ###  style: 'style_shade_faces_solid_color'
-            ### ]
-            # logger.debug(f"{voxel}")
-            grid_points = voxel[0]
-            height = voxel[1]
-            if G == grid_points[0]:
-                tile_has_stuff = True
-                h = height
-                # logger.debug(f"{G}: {h}")
-                break
-
-        # Store this height value for use elsewhere
-        self.mouses['mouse_height'] = h
-
-        if h==0:
-            # Don't draw the yellow highlight
-            return
-
-        Gs = [ # Define a square tile at that location
-              (G[0]  ,G[1]  ),
-              (G[0]+1,G[1]  ),
-              (G[0]+1,G[1]+1),
-              (G[0]  ,G[1]+1)]
-        # Xfm square tile from grid coordinates to pixel coordinates
-        points_z0 = [self.grid.xfm_gp(G) for G in Gs]
-        # Add height to the square tile
-        # h = -20 # TEMPORARY: Hardcoded value
-        points_zh = [(P[0], P[1] - h*self.grid.scale) for P in points_z0]
-        # Draw a yellow highlight above the voxel
-        pygame.draw.polygon(self.surfs['surf_game_art'], Color(200,200,100), points_zh)
-
+    # TODO: move this into VoxelArtwork
     # Called in VoxelArtwork.render()
     def render_grid_tile_highlighted_at_mouse(self) -> None:
         """Display mouse location by highlighting the grid square the mouse is hovering over."""
