@@ -20,17 +20,18 @@
     [x] Refactor VoxelArtwork to describe voxels as dicts rather than lists
         * Ah, but I still need a list to iterate over for draw-order.
     [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
-[ ] Draw steps
-[ ] Refactor collision detection out to its own section
-    [x] use keys dict to set a moves dict
-    [ ] then handle collision detection in its own function that just uses the moves dict
-[ ] Add controls for moving in steps:
+[x] Draw steps
+[ ] Add controls for moving in discrete steps:
     [ ] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
+        [ ] But end free movement on a tile: continue movement until character is on a tile
     [ ] h,j,k,l become moving to discrete tiles
         [ ] if the player is not on a discrete tile, this key puts them onto one
         [ ] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
             is just for dev so I have a way to nudge the character without
             collision detection rules 
+[ ] Refactor collision detection out to its own section
+    [x] use keys dict to set a moves dict
+    [ ] then handle collision detection in its own function that just uses the moves dict
 
 [x] Draw a floor
     [ ] Give floor same color gradient effect that I put on the grid
@@ -209,7 +210,7 @@ class Player:
         self.moving = False
         # TODO: sign of z-direction always confuses me, e.g., look at self.z in render_romanized_chars
         self.z = 0                                      # Position in z-direction
-        self.zclimbmax = 3                              # Max amt player can climb -- determines max height of steps
+        self.zclimbmax = 3.5                            # Max amt player can climb -- determines max height of steps
         self.dz = 0                                     # Speed in z-direction
         self.voxel = None                               # The voxel at the player's location (e.g., standing on a wall)
         self.is_casting = False
@@ -469,29 +470,48 @@ class TileMap:
 
         if 0:
             ### Example making a single voxel wall in the center of the grid
-            layout[(0,0)] = {'height':25, 'style':"style_shade_faces_solid_color"}
+            layout[(0,0)] = {'height':25, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
+
+        elif 0:
+            ### Example making a staircase
+            step_height = 0
+            for i in range(20):
+                step_height += 3
+                layout[(0,i)] = {'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
 
         else:
             ### Make walls
             # Outer walls
             for i in range(a,b):
-                layout[(i,  a)]   = {'height':25, 'style':"style_shade_faces_solid_color"} # Front left wall
-                layout[(i,  b-1)] = {'height':65, 'style':"style_shade_faces_solid_color"} # Back right wall
-                layout[(a,  i)]   = {'height':65, 'style':"style_shade_faces_solid_color"} # Back left wall
-                layout[(b-1,i)]   = {'height':25, 'style':"style_skeleton_frame"} # Front right wall
+                layout[(i,  a)]   = {'height':25, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Front left wall
+                layout[(i,  b-1)] = {'height':65, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Back right wall
+                layout[(a,  i)]   = {'height':65, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Back left wall
+                layout[(b-1,i)]   = {'height':25, 'style':"style_skeleton_frame", 'rand_amt':5} # Front right wall
             # Inner walls: walls at constant x from y=a to y=b and constant y from x=a to x=b
             x = -10; a = -10; b = 20
             for i in range(a,b):
-                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
             y = 20; a = -10; b = 20
             for i in range(a,b):
-                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
             x = -5; a = -10; b = 15
             for i in range(a,b):
-                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
             y = 15; a = -5; b = 20
             for i in range(a,b):
-                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color"}
+                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
+            ### Make stairs
+            # Make right-hand staircase up to back corner
+            step_height = 0
+            start = 4
+            for i in range(-1*start, self.a, -1):
+                step_height += 3
+                layout[(i,self.b-2)] = {'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            # Make left-hand staircase up to back corner
+            step_height = 0
+            for i in range(start-1, self.b-2):
+                step_height += 3
+                layout[(self.a+1,i)] = {'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
 
         self.layout = layout
 
@@ -553,7 +573,9 @@ class VoxelArtwork:
         for G in self.game.tile_map.layout:
             # TEMPORARY: assume for now that every thing is a wall
             wall = self.game.tile_map.layout[G]
-            height = random.choice(list(range(wall['height'],wall['height']+5)))
+            height = wall['height']
+            if wall['rand_amt'] > 0:
+                height = random.choice(list(range(wall['height'],wall['height']+wall['rand_amt'])))
             grid_points = [(G[0]  ,G[1]  ),
                            (G[0]+1,G[1]  ),
                            (G[0]+1,G[1]+1),
@@ -1499,7 +1521,7 @@ class Game:
                 # Now check if the top of this tile is too high for the player to get onto
                 G = (neighbor_x, neighbor_y)
                 tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = self.player.z > -1*tile_height*self.grid.scale
+                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
                 # TODO: make "too_high" a little higher than same height
                 if too_high:
                     # Block the player from moving here
