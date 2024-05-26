@@ -22,8 +22,8 @@
     [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
 [x] Draw steps
 [x] Zoom to fit
-[ ] Pan
-[ ] Fullscreen
+[x] Pan
+[x] Fullscreen
 [ ] Add controls for moving in discrete steps:
     [x] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
         [ ] But end free movement on a tile: continue movement until character is on a tile
@@ -41,7 +41,6 @@
     [ ] Give floor same color gradient effect that I put on the grid
 [x] Add a Help HUD
 [x] If Debug HUD is visible, show Help HUD below Debug HUD
-[ ] Pan with mouse
 [ ] Save game data
 [ ] Load game data
 [ ] Improved collision detection using height:
@@ -939,7 +938,7 @@ class Game:
         os.environ["PYGAME_BLEND_ALPHA_SDL2"] = "1"     # Use SDL2 alpha blending
         # os.environ["SDL_VIDEO_WINDOW_POS"] = "1000,0"   # Position window in upper right
 
-        self.os_window = OsWindow((120*16, 120*9))        # Track OS Window size
+        self.os_window = OsWindow((120*16, 120*9), is_fullscreen=True) # Track OS Window size
         logger.debug(f"Window size: {self.os_window.size[0]} x {self.os_window.size[1]}")
 
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces (including pygame.display)
@@ -979,8 +978,10 @@ class Game:
 
         # Handle keyboard and mouse
         # Zoom by scrolling the mouse wheel
-        # TODO: pan by pressing the mouse wheel or left-clicking
+        # Pan by pressing the mouse wheel or left-clicking
         self.handle_ui_events()
+        if self.grid.is_panning:
+            self.grid.pan(pygame.mouse.get_pos())
 
         self.update_held_keys_effects()
         self.update_player_actions()
@@ -1106,6 +1107,7 @@ class Game:
 
 
     def handle_ui_events(self) -> None:
+        kmod = pygame.key.get_mods()                    # Which modifier keys are held
         for event in pygame.event.get():
             match event.type:
                 # No use for these events yet
@@ -1141,19 +1143,45 @@ class Game:
                     match event.button:
                         case 1:
                             logger.debug("Left-click")
-                            self.player.pos = self.grid.xfm_pg(event.pos)
-                            self.player.z = -1*self.grid.scale*self.mouses['mouse_height']
-                        case 2: logger.debug("Middle-click")
+                            if kmod & pygame.KMOD_SHIFT:
+                                # Let shift_left-click be my panning
+                                # because I cannot do right-click-and-drag on the laptop trackpad
+                                self.handle_mousebuttondown_middleclick()
+                            else:
+                                # Place the player
+                                self.player.pos = self.grid.xfm_pg(event.pos)
+                                self.player.z = -1*self.grid.scale*self.mouses['mouse_height']
+                        case 2:
+                            logger.debug("Middle-click")
+                            self.handle_mousebuttondown_middleclick()
                         case 3: logger.debug("Right-click")
                         case 4: logger.debug("Mousewheel y=+1")
                         case 5: logger.debug("Mousewheel y=-1")
                         case 6: logger.debug("Logitech G602 Thumb button 6")
                         case 7: logger.debug("Logitech G602 Thumb button 7")
                         case _: logger.debug(event)
-
+                case pygame.MOUSEBUTTONUP:
+                    match event.button:
+                        case 1:
+                            if kmod & pygame.KMOD_SHIFT:
+                                logger.debug("Shift+Left mouse button released")
+                                self.handle_mousebuttonup_middleclick()
+                        case 2:
+                            logger.debug("Middle mouse button released")
+                            self.handle_mousebuttonup_middleclick()
+                        case _: logger.debug(event)
                 # Log any other events
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
+
+    def handle_mousebuttondown_middleclick(self) -> None:
+        self.grid.pan_ref = pygame.mouse.get_pos()
+        self.grid.is_panning = True
+
+    def handle_mousebuttonup_middleclick(self) -> None:
+        self.grid.pan_ref = (None, None)
+        self.grid.pan_origin = (self.grid.e, self.grid.f)
+        self.grid.is_panning = False
 
     def handle_keyup(self, event) -> None:
         kmod = pygame.key.get_mods()
@@ -1254,6 +1282,10 @@ class Game:
         # Handle single-shot key presses
         match event.key:
             case pygame.K_q: sys.exit()                 # q - Quit
+            case pygame.K_F11:
+                self.os_window.toggle_fullscreen() # F11 - toggle fullscreen
+                self.surfs = define_surfaces(self.os_window)
+                self.grid.reset()
             case pygame.K_SEMICOLON:
                 if kmod & pygame.KMOD_SHIFT:
                     self.player.is_casting = True
@@ -1304,7 +1336,6 @@ class Game:
             case pygame.K_F8: logger.debug("F8")
             case pygame.K_F9: logger.debug("F9")
             case pygame.K_F10: logger.debug("F10")
-            case pygame.K_F11: logger.debug("F11")
             case pygame.K_F12: logger.debug("F12")
             case pygame.K_LSHIFT: logger.debug("Left Shift")
             case pygame.K_RSHIFT: logger.debug("Right Shift")
@@ -1777,6 +1808,10 @@ class Grid:
 
     def zoom_out(self) -> None:
         self.scale *= 0.9
+
+    def pan(self, mpos:tuple) -> None:
+        self.e = self.pan_origin[0] + (mpos[0] - self.pan_ref[0])
+        self.f = self.pan_origin[1] + (mpos[1] - self.pan_ref[1])
 
     def draw(self, surf:pygame.Surface) -> None:
         linesegs = self.hlinesegs + self.vlinesegs

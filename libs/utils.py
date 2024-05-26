@@ -64,9 +64,64 @@ class OsWindow:
     size -- (w,h) - sets initial window size and tracks value when window is resized.
     flags -- OR'd bitflags for window behavior. Default is pygame.RESIZABLE.
     """
-    def __init__(self, size:tuple, flags:int=pygame.RESIZABLE):
-        self.size = size
-        self.flags = flags
+    def __init__(self, size:tuple, is_fullscreen:bool=False):
+        # Set initial sizes for windowed and fullscreen
+        self._windowed_size = size
+        self._fullscreen_size = pygame.display.get_desktop_sizes()[-1]
+
+        # Set initial state: windowed or fullscreen
+        self._is_fullscreen = is_fullscreen
+
+        # Update window size and flags to match state of is_fullscreen
+        # (size will set to windowed or fullscreen size depending on is_fullscreen)
+        # (flags will set to RESIZABLE or FULLSCREEN depending on is_fullscreen)
+        self._set_size_and_flags()
+
+    @property
+    def is_fullscreen(self) -> bool:
+        return self._is_fullscreen
+
+    @property
+    def size(self) -> tuple:
+        return self._size
+
+    @property
+    def flags(self) -> tuple:
+        return self._flags
+
+    def _set_size_and_flags(self) -> None:
+        """Set _size and _flags."""
+        if self.is_fullscreen:
+            # Update w x h of fullscreen (in case external display changed while game is running).
+            # Always use last display listed (if I have an external display, it will list last).
+            self._fullscreen_size = pygame.display.get_desktop_sizes()[-1]
+            self._size = self._fullscreen_size
+            self._flags = pygame.FULLSCREEN
+        else:
+            self._size = self._windowed_size
+            self._flags = pygame.RESIZABLE
+        # Report new window size
+        logger.debug(f"Window size: {self.size[0]} x {self.size[1]}")
+
+    def toggle_fullscreen(self) -> None:
+        """Toggle OS window between full screen and windowed.
+
+        List the sizes of the connected displays:
+
+        ### pygame.display.get_desktop_sizes(): [(2256, 1504), (1920, 1080)]
+        logger.debug(f"pygame.display.get_desktop_sizes(): {desktop_sizes}")
+
+        Always use the last size listed:
+
+        ### If my laptop is in Ubuntu Xorg mode and is the only display:
+        ###     Fullscreen size: (2256, 1504)
+        ### If I connect my Acer monitor:
+        ###     Fullscreen size: (1920, 1080)
+        logger.debug(f"Fullscreen size: {desktop_sizes[-1]}")
+        """
+        self._is_fullscreen = not self.is_fullscreen
+        logger.debug(f"FULLSCREEN: {self.is_fullscreen}")
+        self._set_size_and_flags() # Set size and flags based on fullscreen or windowed
 
     def handle_WINDOWRESIZED(self, event) -> None:
         """Track size of OS window in self.size"""
