@@ -21,14 +21,18 @@
         * Ah, but I still need a list to iterate over for draw-order.
     [x] Player renders on top of yellow highlight when mouse hovers at the voxel the player is standing on
 [x] Draw steps
+[x] Zoom to fit
+[ ] Pan
+[ ] Fullscreen
 [ ] Add controls for moving in discrete steps:
-    [ ] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
+    [x] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
         [ ] But end free movement on a tile: continue movement until character is on a tile
-    [ ] h,j,k,l become moving to discrete tiles
+    [x] h,j,k,l become moving to discrete tiles
         [ ] if the player is not on a discrete tile, this key puts them onto one
         [ ] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
             is just for dev so I have a way to nudge the character without
             collision detection rules 
+    [ ] Apply collision detection to discrete movement
 [ ] Refactor collision detection out to its own section
     [x] use keys dict to set a moves dict
     [ ] then handle collision detection in its own function that just uses the moves dict
@@ -1654,76 +1658,47 @@ class Grid:
         self.reset()
 
     def reset(self) -> None:
-        # Define a 2x3 transform matrix [a,b,e;c,d,f] to go from g (game grid) to p (pixels)
-        ### Grid view is top-down (no skew: b=0, c=0)
-        # self.xfm = {'a':20,'b':0,'c':0,'d':-20,'e':200,'f':300}
-        # Grid view is skewed
-        # self.xfm = {'a':20,'b':5,'c':0,'d':-10,'e':200,'f':300}
+        """Reset to initial view.
 
-        # # Define 2x2 transform
-        # self._a = 20
-        # self._b = 5
-        # self._c = 5
-        # self._d = -5
-        # # Define offset vector (in pixel coordinates)
-        # self._e = 10
-        # self._f = 300
+        - Define a 2x3 transform matrix [a,b,e;c,d,f] to go from g (game grid) to p (pixels)
+        - Size the pixel artwork to center and fit within the window
+        """
+        self.a = 8
+        self.b = 7
+        self.c = 3
+        self.d = -5
 
-        # Define 2x2 transform
-        self._a = 8
-        self._b = 7
-        self._c = 3
-        self._d = -5
         # Define offset vector (in pixel coordinates)
         # Place origin at center of game art
         ctr = (int(self.game.os_window.size[0]/2),
-               int(self.game.os_window.size[1]/2)+60)
-        self._e = ctr[0]
-        self._f = ctr[1]
-        # TODO: calculate the "zoom to fit" scale, don't hardcode it
-        self.scale = 2.2                           # Zoom in to fill a 1920 x 1080 window
+               int(self.game.os_window.size[1]/2))
+        self.e = ctr[0]
+        self.f = ctr[1]
 
-    @property
-    def a(self) -> float:
-        return self._a
-    @a.setter
-    def a(self, value) -> float:
-        self._a = value
+        self.pan_origin = (self.e, self.f) # Stores initial (e,f) during panning
+        self.pan_ref = (None, None) # Stores initial mpos during panning
+        self.is_panning = False # Tracks whether mouse is panning
 
-    @property
-    def b(self) -> float:
-        return self._b
-    @b.setter
-    def b(self, value) -> float:
-        self._b = value
+        self.scale = self.zoom_to_fit()
 
-    @property
-    def c(self) -> float:
-        return self._c
-    @c.setter
-    def c(self, value) -> float:
-        self._c = value
+    def zoom_to_fit(self) -> float:
+        # Get the size of the grid
+        size_g = (self.N, self.N)
 
-    @property
-    def d(self) -> float:
-        return self._d
-    @d.setter
-    def d(self, value) -> float:
-        self._d = value
+        # Get an unscaled 2x2 transformation matrix
+        a,b,c,d = self.a, self.b, self.c, self.d
 
-    @property
-    def e(self) -> float:
-        return self._e
-    @e.setter
-    def e(self, value) -> float:
-        self._e = value
+        # Transform the size to pixel coordinates (as if the size were a point)
+        size_p = (a*size_g[0] + b*size_g[1], c*size_g[0] + d*size_g[1])
 
-    @property
-    def f(self) -> float:
-        return self._f
-    @f.setter
-    def f(self, value) -> float:
-        self._f = value
+        # Add some margin
+        margin = 200
+        size_p = (abs(size_p[0]) + margin, abs(size_p[1]) + margin)
+
+        scale_x = self.game.os_window.size[0]/size_p[0]
+        scale_y = self.game.os_window.size[1]/size_p[1]
+
+        return min(scale_x, scale_y)
 
     def scaled(self) -> tuple:
         return (self.a*self.scale, self.b*self.scale, self.c*self.scale, self.d*self.scale)
