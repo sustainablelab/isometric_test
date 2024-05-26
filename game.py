@@ -110,10 +110,16 @@ def define_actions() -> dict:
 
 def define_moves() -> dict:
     moves = {}
+    # Free movement
     moves['move_down']  = False
     moves['move_up']    = False
     moves['move_right'] = False
     moves['move_left']  = False
+    # Discrete movement
+    moves['move_down_to_tile']  = False
+    moves['move_up_to_tile']    = False
+    moves['move_right_to_tile'] = False
+    moves['move_left_to_tile']  = False
     return moves
 
 def define_held_keys() -> dict:
@@ -130,22 +136,27 @@ def define_held_keys() -> dict:
     keys['key_Shift_Space'] = False
     # Xfm matrix
     keys['key_A'] = False
-    keys['key_a'] = False
+    # keys['key_a'] = False # Repurposed
     keys['key_B'] = False
     keys['key_b'] = False
     keys['key_C'] = False
     keys['key_c'] = False
     keys['key_D'] = False
-    keys['key_d'] = False
+    # keys['key_d'] = False # Repurposed
     keys['key_E'] = False
     keys['key_e'] = False
     keys['key_F'] = False
     keys['key_f'] = False
-    # Movement
+    # Discrete Movement
     keys['key_j'] = False
     keys['key_k'] = False
     keys['key_h'] = False
     keys['key_l'] = False
+    # Free Movement
+    keys['key_s'] = False
+    keys['key_w'] = False
+    keys['key_a'] = False
+    keys['key_d'] = False
     return keys
 
 def define_colors() -> dict:
@@ -239,11 +250,6 @@ class Player:
 
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
-        # Check for motion
-        if self.dz != 0 or self.game.keys['key_j'] or self.game.keys['key_k'] or self.game.keys['key_h'] or self.game.keys['key_l']:
-            self.moving = True
-        else:
-            self.moving = False
         if self.moving:
             # Wiggle more if moving
             self.wiggle = 0.5
@@ -1152,42 +1158,42 @@ class Game:
             match event.key:
                 case pygame.K_LSHIFT:
                     self.keys['key_Shift_Space'] = False
-                    self.keys['key_A'] = False
-                    self.keys['key_B'] = False
-                    self.keys['key_C'] = False
-                    self.keys['key_D'] = False
+                    # self.keys['key_A'] = False
+                    # self.keys['key_B'] = False
+                    # self.keys['key_C'] = False
+                    # self.keys['key_D'] = False
                     self.keys['key_E'] = False
                     self.keys['key_F'] = False
                 case pygame.K_SPACE:
                     self.keys['key_Space'] = False
                     self.keys['key_Shift_Space'] = False
-                case pygame.K_a:
-                    self.keys['key_A'] = False
-                    self.keys['key_a'] = False
-                case pygame.K_b:
-                    self.keys['key_B'] = False
-                    self.keys['key_b'] = False
-                case pygame.K_c:
-                    self.keys['key_C'] = False
-                    self.keys['key_c'] = False
-                case pygame.K_d:
-                    self.keys['key_D'] = False
-                    self.keys['key_d'] = False
+                # case pygame.K_a:
+                #     self.keys['key_A'] = False
+                #     self.keys['key_a'] = False
+                # case pygame.K_b:
+                #     self.keys['key_B'] = False
+                #     self.keys['key_b'] = False
+                # case pygame.K_c:
+                #     self.keys['key_C'] = False
+                #     self.keys['key_c'] = False
+                # case pygame.K_d:
+                #     self.keys['key_D'] = False
+                #     self.keys['key_d'] = False
                 case pygame.K_e:
                     self.keys['key_E'] = False
                     self.keys['key_e'] = False
                 case pygame.K_f:
                     self.keys['key_F'] = False
                     self.keys['key_f'] = False
-                # TEMPORARY: player movement
-                case pygame.K_j: # Move Down
-                    self.keys['key_j'] = False
-                case pygame.K_k: # Move Up
-                    self.keys['key_k'] = False
-                case pygame.K_h: # Move Left
-                    self.keys['key_h'] = False
-                case pygame.K_l: # Move Right
-                    self.keys['key_l'] = False
+                # Free player movement
+                case pygame.K_s: # Move Down
+                    self.keys['key_s'] = False
+                case pygame.K_w: # Move Up
+                    self.keys['key_w'] = False
+                case pygame.K_a: # Move Left
+                    self.keys['key_a'] = False
+                case pygame.K_d: # Move Right
+                    self.keys['key_d'] = False
                 case _:
                     pass
 
@@ -1264,23 +1270,23 @@ class Game:
                     self.grid.zoom_in()
                 else:
                     self.grid.zoom_out()
-            # TEMPORARY player movement
-            # case pygame.K_j:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0],pos[1] - 1)
-            #     logger.debug("Move Down")
-            # case pygame.K_k:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0],pos[1] + 1)
-            #     logger.debug("Move Up")
-            # case pygame.K_h:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0] - 1 , pos[1])
-            #     logger.debug("Move Left")
-            # case pygame.K_l:
-            #     pos = self.player.pos
-            #     self.player.pos = (pos[0] + 1 , pos[1])
-            #     logger.debug("Move Right")
+            # Discrete player movement
+            # TODO: Animate discrete tile movement
+            # TODO: discrete tile movement continues until player is perfectly on a tile
+            case pygame.K_j:
+                self.moves['move_down_to_tile'] = True
+            case pygame.K_k:
+                pos = self.player.pos
+                self.player.pos = (pos[0],pos[1] + 1)
+                # logger.debug("Move Up")
+            case pygame.K_h:
+                pos = self.player.pos
+                self.player.pos = (pos[0] - 1 , pos[1])
+                # logger.debug("Move Left")
+            case pygame.K_l:
+                pos = self.player.pos
+                self.player.pos = (pos[0] + 1 , pos[1])
+                # logger.debug("Move Right")
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
@@ -1319,26 +1325,26 @@ class Game:
                     # TEMPORARY levitate player
                     self.keys['key_Space'] = True
             # TEMPORARY manipulate the xfm matrix
-            case pygame.K_a:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_A'] = True
-                else:
-                    self.keys['key_a'] = True
-            case pygame.K_b:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_B'] = True
-                else:
-                    self.keys['key_b'] = True
-            case pygame.K_c:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_C'] = True
-                else:
-                    self.keys['key_c'] = True
-            case pygame.K_d:
-                if kmod & pygame.KMOD_SHIFT:
-                    self.keys['key_D'] = True
-                else:
-                    self.keys['key_d'] = True
+            # case pygame.K_a:
+            #     if kmod & pygame.KMOD_SHIFT:
+            #         self.keys['key_A'] = True
+            #     else:
+            #         self.keys['key_a'] = True
+            # case pygame.K_b:
+            #     if kmod & pygame.KMOD_SHIFT:
+            #         self.keys['key_B'] = True
+            #     else:
+            #         self.keys['key_b'] = True
+            # case pygame.K_c:
+            #     if kmod & pygame.KMOD_SHIFT:
+            #         self.keys['key_C'] = True
+            #     else:
+            #         self.keys['key_c'] = True
+            # case pygame.K_d:
+            #     if kmod & pygame.KMOD_SHIFT:
+            #         self.keys['key_D'] = True
+            #     else:
+            #         self.keys['key_d'] = True
             case pygame.K_e:
                 if kmod & pygame.KMOD_SHIFT:
                     self.keys['key_E'] = True
@@ -1349,35 +1355,35 @@ class Game:
                     self.keys['key_F'] = True
                 else:
                     self.keys['key_f'] = True
-            # TEMPORARY: player movement
-            case pygame.K_j: # Move Down
+            # Free player movement
+            case pygame.K_s: # Move Down
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+J' nudges player
                     pos = self.player.pos
                     self.player.pos = (pos[0],                      pos[1] - self.player.speed_walk)
                 else:
-                    self.keys['key_j'] = True
-            case pygame.K_k: # Move Up
+                    self.keys['key_s'] = True
+            case pygame.K_w: # Move Up
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+K' nudges player
                     pos = self.player.pos
                     self.player.pos = (pos[0],                      pos[1] + self.player.speed_walk)
                 else:
-                    self.keys['key_k'] = True
-            case pygame.K_h: # Move Left
+                    self.keys['key_w'] = True
+            case pygame.K_a: # Move Left
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+H' nudges player
                     pos = self.player.pos
                     self.player.pos = (pos[0] - self.player.speed_walk,  pos[1])
                 else:
-                    self.keys['key_h'] = True
-            case pygame.K_l: # Move Right
+                    self.keys['key_a'] = True
+            case pygame.K_d: # Move Right
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+L' nudges player
                     pos = self.player.pos
                     self.player.pos = (pos[0] + self.player.speed_walk,  pos[1])
                 else:
-                    self.keys['key_l'] = True
+                    self.keys['key_d'] = True
             case _:
                 pass
 
@@ -1410,20 +1416,21 @@ class Game:
         if self.keys['key_B']: self.grid.b += 1
         if self.keys['key_C']: self.grid.c += 1
         if self.keys['key_D']: self.grid.d += 1
-        if self.keys['key_a']: self.grid.a -= 1
+        # if self.keys['key_a']: self.grid.a -= 1
         if self.keys['key_b']: self.grid.b -= 1
         if self.keys['key_c']: self.grid.c -= 1
-        if self.keys['key_d']: self.grid.d -= 1
+        # if self.keys['key_d']: self.grid.d -= 1
         if self.keys['key_E']: self.grid.e += 1
         if self.keys['key_e']: self.grid.e -= 1
         if self.keys['key_F']: self.grid.f += 1
         if self.keys['key_f']: self.grid.f -= 1
 
     def update_held_keys_effects_player_movement(self) -> None:
-        self.moves['move_down']  = self.keys['key_j']
-        self.moves['move_up']    = self.keys['key_k']
-        self.moves['move_left']  = self.keys['key_h']
-        self.moves['move_right'] = self.keys['key_l']
+        # Free player movement
+        self.moves['move_down']  = self.keys['key_s']
+        self.moves['move_up']    = self.keys['key_w']
+        self.moves['move_left']  = self.keys['key_a']
+        self.moves['move_right'] = self.keys['key_d']
 
     # TODO: move to Player
     def update_player_actions(self) -> None:
@@ -1438,11 +1445,20 @@ class Game:
         if self.debug_hud:
             self.debug_hud.add_text(f"self.moves: {self.moves}")
 
+        if self.moves['move_down'] or self.moves['move_up'] or self.moves['move_left'] or self.moves['move_right']:
+            self.player.moving = True
+        else:
+            self.player.moving = False
+        if self.moves['move_down_to_tile']:
+            pos = self.player.pos
+            self.player.pos = (pos[0],pos[1] - 1)
+            # logger.debug("Move Down")
+            self.moves['move_down_to_tile'] = False
         if self.moves['move_down']:
             pos = self.player.pos
             speed = self.player.speed_walk
             # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
-            if self.keys['key_h'] or self.keys['key_l']:
+            if self.moves['move_left'] or self.moves['move_right']:
                 speed *= 0.7
             # Set new position
             self.player.pos = (pos[0],                      pos[1] - speed)
@@ -1472,7 +1488,7 @@ class Game:
             pos = self.player.pos
             speed = self.player.speed_walk
             # Scale walking speed if moving UP+LEFT or UP+RIGHT
-            if self.keys['key_h'] or self.keys['key_l']:
+            if self.moves['move_left'] or self.moves['move_right']:
                 speed *= 0.7
             self.player.pos = (pos[0],                      pos[1] + speed)
             # Collision detection
@@ -1502,7 +1518,7 @@ class Game:
             pos = self.player.pos
             speed = self.player.speed_walk
             # Scale walking speed if moving LEFT+UP or LEFT+DOWN
-            if self.keys['key_k'] or self.keys['key_j']:
+            if self.moves['move_up'] or self.moves['move_down']:
                 speed *= 0.7
             self.player.pos = (pos[0] - speed,  pos[1])
             # Collision detection
@@ -1531,7 +1547,7 @@ class Game:
             pos = self.player.pos
             speed = self.player.speed_walk
             # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
-            if self.keys['key_k'] or self.keys['key_j']:
+            if self.moves['move_up'] or self.moves['move_down']:
                 speed *= 0.7
             self.player.pos = (pos[0] + speed,  pos[1])
             # Collision detection
