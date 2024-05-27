@@ -36,14 +36,19 @@
 [ ] Refactor collision detection out to its own section
     [x] use keys dict to set a moves dict
     [ ] then handle collision detection in its own function that just uses the moves dict
+[ ] Zoom centers on player
 
 [x] Draw a floor
-    [ ] Give floor same color gradient effect that I put on the grid
+    [-] Give floor same color gradient effect that I put on the grid
+    [ ] Move "ground floor" lower down:
+        [ ] define how voxels combine to form a structure
+        [ ] cover the floor in voxels
+        [ ] make a second floor, third floor, etc.
 [x] Add a Help HUD
 [x] If Debug HUD is visible, show Help HUD below Debug HUD
 [ ] Save game data
 [ ] Load game data
-[ ] Improved collision detection using height:
+[x] Improved collision detection using height:
     * Player traverses small height differences
     * Player is only blocked when height difference exceeds some amount
     * [x] Let mouse highlight "top" of a wall
@@ -53,6 +58,8 @@
     * [x] Player can walk off a wall
     * [x] Player can walk on a wall (need to consider height difference in collision detection)
     * [x] Player can walk up and down steps
+[ ] Prototype spell-casting without using romanized chars as the UI
+    * [ ] cast wall-related spells with dev shortcuts and mouse clicks
 [ ] Include spell casting
     * [x] ':' to start spell casting
     * [x] keystrokes appear at bottom of screen
@@ -230,6 +237,12 @@ class Player:
         self.is_casting = False
         self.spell = ""
         self.keystrokes = ""
+        self.actions = define_actions()                 # Dict of player actions (what to do when Space is pressed)
+
+    def update_actions(self) -> None:
+        if self.actions['action_levitate']:
+            self.dz = 0               # reset velocity (turn off gravity)
+            self.z -= self.speed_rise # levitate
 
     def update_voxel(self) -> None:
         """Figure out which voxel (if any) is below the player."""
@@ -240,16 +253,6 @@ class Player:
             self.voxel = voxels[G]
         else:
             self.voxel = None # Nothing under the player
-
-    def old_update_voxel(self) -> None:
-        """Figure out which voxel (if any) is below the player."""
-        self.voxel = None  # Assume nothing under the player
-        G = (int(self.pos[0]), int(self.pos[1]))
-        for voxel in self.game.voxel_artwork.layout:
-            grid_points = voxel[0]
-            height = voxel[1]
-            if G == grid_points[0]:
-                self.voxel = voxel
 
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
@@ -944,7 +947,6 @@ class Game:
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces (including pygame.display)
         pygame.display.set_caption("Isometric grid test")
         self.colors = define_colors()                   # Dict of Pygame Colors
-        self.actions = define_actions()                 # Dict of player actions (what to do when Space is pressed)
         self.moves = define_moves()                     # Dict of player movements
         self.keys = define_held_keys()                  # Dict of which keyboard inputs are being held down
         self.settings = define_settings()               # Dict of settings
@@ -984,7 +986,8 @@ class Game:
             self.grid.pan(pygame.mouse.get_pos())
 
         self.update_held_keys_effects()
-        self.update_player_actions()
+        # self.update_player_actions()
+        self.player.update_actions()
         self.update_player_movement()
 
         # Clear screen
@@ -1428,7 +1431,7 @@ class Game:
         self.update_held_keys_effects_player_movement()
 
         # Pick what action to do when Space is held
-        self.actions['action_levitate'] = self.keys['key_Space']
+        self.player.actions['action_levitate'] = self.keys['key_Space']
 
         # Randomize voxel artwork if Shift+Space is held
         if self.keys['key_Shift_Space']:
@@ -1466,13 +1469,6 @@ class Game:
         self.moves['move_up']    = self.keys['key_w']
         self.moves['move_left']  = self.keys['key_a']
         self.moves['move_right'] = self.keys['key_d']
-
-    # TODO: move to Player
-    def update_player_actions(self) -> None:
-        # Levitate player if Space is held
-        if self.actions['action_levitate']:
-            self.player.dz = 0                          # reset velocity (turn off gravity)
-            self.player.z -= self.player.speed_rise     # levitate
 
     # TODO: move to Player
     def update_player_movement(self) -> None:
