@@ -36,7 +36,7 @@
 [ ] Refactor collision detection out to its own section
     [x] use keys dict to set a moves dict
     [ ] then handle collision detection in its own function that just uses the moves dict
-[ ] Zoom centers on player
+[ ] Zoom centers on player or on center of screen, not on center of grid!
 
 [x] Draw a floor
     [-] Give floor same color gradient effect that I put on the grid
@@ -376,81 +376,6 @@ class Player:
                               self.game.romanized_chars.size
                               ))
                 offset = (offset[0]+self.game.romanized_chars.size[0], offset[1])
-
-    def old_render_romanized_chars(self, surf:pygame.Surface) -> None:
-        """Render romanized chars above the player's head.
-
-        This is the old version because I attempted to do the scaling here.
-        I couldn't get the text to center after I scaled it.
-        """
-        # Get the number of chars to render
-        nchars = 0
-        for letter in self.keystrokes:
-            if letter in self.game.romanized_chars.letters:
-                nchars += 1
-
-        # Get the width and height of the complete image for all keystrokes thus far
-        img_w = nchars*self.game.romanized_chars.size[0]
-        img_h = self.game.romanized_chars.size[1]
-
-        # TODO: Scale the image
-        k = 0.5
-        scaled_img_w = img_w*k
-        scaled_img_h = img_h*k
-
-        # Position the chars centered above the player's head
-        pos = self.game.grid.xfm_gp(self.pos)           #  Convert player pos to pixel coordinates
-        start = (pos[0] - img_w/2, pos[1] - img_h - self.height*self.game.grid.scale)
-        # start = (pos[0] - scaled_img_w/2, pos[1] - scaled_img_h - self.height*self.game.grid.scale)
-
-        offset = (0,0)                                  # Offset next letter from start position
-        for letter in self.keystrokes:
-            if letter in self.game.romanized_chars.letters:
-                # Look up index of this letter
-                index = self.game.romanized_chars.letters[letter]
-                # Blit letter art at that index
-                ### blit(source, dest, area=None, special_flags=0) -> Rect
-                # surf.blit(self.game.surfs['surf_romanized_chars'],
-                self.game.surfs['surf_draw'].blit(self.game.surfs['surf_romanized_chars'],
-                    (start[0] + offset[0], start[1] + offset[1]),
-                    area=pygame.Rect(
-                        (index*self.game.romanized_chars.size[0],0),
-                        self.game.romanized_chars.size
-                        ))
-                # Increment x-position for next letter
-                offset = (offset[0]+self.game.romanized_chars.size[0], offset[1])
-
-        # Create a new (smaller) surface
-        size = self.game.surfs['surf_draw'].get_size()
-        size = (size[0]*k, size[1]*k)
-        surf_chars = pygame.Surface(size, flags=pygame.SRCALPHA)
-        # Copy and scale temporary drawing surface to new surface
-        smooth = True  # I can't tell a difference in smoothness or performance
-        if smooth:
-            ### smoothscale(surface, size, dest_surface=None) -> Surface
-            pygame.transform.smoothscale(self.game.surfs['surf_draw'], size, surf_chars)
-        else:
-            ### scale(surface, size, dest_surface=None) -> Surface
-            pygame.transform.scale(self.game.surfs['surf_draw'], size, surf_chars)
-
-        # Clean the temporary drawing surface
-        rect = pygame.Rect( (start[0] - img_w/2, start[1] - img_h/2),
-                            (start[0] + img_w/2, start[1] + img_h/2))
-        self.game.surfs['surf_draw'].fill(self.game.colors['color_clear'], rect=rect)
-
-        # Scale area rect by k to match scaling of the temporary drawing surface
-        # rect = pygame.Rect( (k*(start[0] - img_w/2), k*(start[1] - img_h/2)),
-        #                     (k*(start[0] + img_w/2), k*(start[1] + img_h/2)))
-        rect = pygame.Rect( (start[0] - scaled_img_w/2, start[1] - scaled_img_h/2),
-                            (start[0] + scaled_img_w/2, start[1] + scaled_img_h/2))
-
-        # Blit to game art
-        surf.blit(surf_chars, # self.game.surfs['surf_draw'],
-                    (start[0] - img_w/2, start[1] - img_h/2),
-                    area=rect,
-                    special_flags=pygame.BLEND_ALPHA_SDL2
-                  )
-
 
 # TODO: Move this out to a level editor later
 class TileMap:
