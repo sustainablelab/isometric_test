@@ -228,7 +228,8 @@ class Player:
         self.speed_walk = 0.2
         self.speed_rise = 3.0
         self.wiggle = 0.1                               # Amount to randomize each coordinate value
-        self.moving = False
+        self.moving = False                             # Track moving or not moving
+        self.moves = define_moves()                     # Dict of player movements
         # TODO: sign of z-direction always confuses me, e.g., look at self.z in render_romanized_chars
         self.z = 0                                      # Position in z-direction
         self.zclimbmax = 3.5                            # Max amt player can climb -- determines max height of steps
@@ -243,6 +244,163 @@ class Player:
         if self.actions['action_levitate']:
             self.dz = 0               # reset velocity (turn off gravity)
             self.z -= self.speed_rise # levitate
+
+    def update_movement(self) -> None:
+        # DEBUG moves
+        if self.game.debug_hud:
+            self.game.debug_hud.add_text(f"self.moves: {self.moves}")
+
+        # Track moving or not moving
+        if self.moves['move_down'] or self.moves['move_up'] or self.moves['move_left'] or self.moves['move_right']:
+            self.moving = True
+        else:
+            self.moving = False
+
+        self.update_movement_discrete()
+        self.update_movement_free()
+
+    def update_movement_discrete(self) -> None:
+        # Handle discrete movement
+        if self.moves['move_down_to_tile']:
+            pos = self.pos
+            self.pos = (pos[0],pos[1] - 1)
+            # logger.debug("Move Down")
+            self.moves['move_down_to_tile'] = False
+        if self.moves['move_up_to_tile']:
+            pos = self.pos
+            self.pos = (pos[0],pos[1] + 1)
+            # logger.debug("Move Up")
+            self.moves['move_up_to_tile'] = False
+        if self.moves['move_left_to_tile']:
+            pos = self.pos
+            self.pos = (pos[0] - 1 , pos[1])
+            # logger.debug("Move Left")
+            self.moves['move_left_to_tile'] = False
+        if self.moves['move_right_to_tile']:
+            pos = self.pos
+            self.pos = (pos[0] + 1 , pos[1])
+            # logger.debug("Move Right")
+            self.moves['move_right_to_tile'] = False
+
+    def update_movement_free(self) -> None:
+        # Handle free movement
+        if self.moves['move_down']:
+            pos = self.pos
+            speed = self.speed_walk
+            # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
+            if self.moves['move_left'] or self.moves['move_right']:
+                speed *= 0.7
+            # Set new position
+            self.pos = (pos[0],                      pos[1] - speed)
+            # Collision detection
+            neighbor_x = int(self.pos[0])
+            # Going down? Look 1 tile "below" player
+            # To look "below", comparison depends on whether player y is + or -
+            if self.pos[1] < 0:
+                # Example: player_y = -10.8, 1 tile below y=-11
+                neighbor_y = int(self.pos[1]) - 1
+            else:
+                # Example: player_y = +10.8, 1 tile below y=+10
+                neighbor_y = int(self.pos[1])
+            if (neighbor_x,neighbor_y) in self.game.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.game.voxel_artwork.layout[G]['height']
+                too_high = (self.z  - self.zclimbmax*self.game.grid.scale) > (-1*tile_height*self.game.grid.scale)
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.pos = (pos[0], neighbor_y+1)
+
+        if self.moves['move_up']:
+            # GO UP
+            pos = self.pos
+            speed = self.speed_walk
+            # Scale walking speed if moving UP+LEFT or UP+RIGHT
+            if self.moves['move_left'] or self.moves['move_right']:
+                speed *= 0.7
+            self.pos = (pos[0],                      pos[1] + speed)
+            # Collision detection
+            neighbor_x = int(self.pos[0])
+            # Going up? Look 1 tile "above" player
+            if self.pos[1] < 0:
+                # Example: player_y = -10.8, 1 tile above y=-10
+                neighbor_y = int(self.pos[1])
+            else:
+                # Example: player_y = +10.8, 1 tile above y=+11
+                neighbor_y = int(self.pos[1]) + 1
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (pos[0], neighbor_y-1)
+            if (neighbor_x,neighbor_y) in self.game.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.game.voxel_artwork.layout[G]['height']
+                too_high = (self.z  - self.zclimbmax*self.game.grid.scale) > (-1*tile_height*self.game.grid.scale)
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.pos = (pos[0], neighbor_y-1)
+
+        if self.moves['move_left']:
+            pos = self.pos
+            speed = self.speed_walk
+            # Scale walking speed if moving LEFT+UP or LEFT+DOWN
+            if self.moves['move_up'] or self.moves['move_down']:
+                speed *= 0.7
+            self.pos = (pos[0] - speed,  pos[1])
+            # Collision detection
+            neighbor_y = int(self.pos[1])
+            if self.pos[0] < 0:
+                # Example: Player_x = -10.8, 1 tile left x=-11
+                neighbor_x = int(self.pos[0] - 1)
+            else:
+                # Example player_x = +10.8, 1 tile left x=+10
+                neighbor_x = int(self.pos[0])
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (neighbor_x+1, pos[1])
+            if (neighbor_x,neighbor_y) in self.game.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.game.voxel_artwork.layout[G]['height']
+                too_high = (self.z  - self.zclimbmax*self.game.grid.scale) > -1*tile_height*self.game.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.pos = (neighbor_x+1, pos[1])
+
+        if self.moves['move_right']:
+            pos = self.pos
+            speed = self.speed_walk
+            # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
+            if self.moves['move_up'] or self.moves['move_down']:
+                speed *= 0.7
+            self.pos = (pos[0] + speed,  pos[1])
+            # Collision detection
+            neighbor_y = int(self.pos[1])
+            if self.pos[0] < 0:
+                # Example: Player_x = -10.8, 1 tile right x=-10
+                neighbor_x = int(self.pos[0])
+            else:
+                # Example player_x = +10.8, 1 tile right x=+11
+                neighbor_x = int(self.pos[0] + 1)
+            # for wall in self.tile_map.walls:
+            #     if (neighbor_x,neighbor_y) in wall.points:
+            #         self.player.pos = (neighbor_x-1, pos[1])
+            if (neighbor_x,neighbor_y) in self.game.tile_map.layout:
+                # There is a tile there.
+                # Now check if the top of this tile is too high for the player to get onto
+                G = (neighbor_x, neighbor_y)
+                tile_height = self.game.voxel_artwork.layout[G]['height']
+                too_high = (self.z  - self.zclimbmax*self.game.grid.scale) > -1*tile_height*self.game.grid.scale
+                # TODO: make "too_high" a little higher than same height
+                if too_high:
+                    # Block the player from moving here
+                    self.pos = (neighbor_x-1, pos[1])
 
     def update_voxel(self) -> None:
         """Figure out which voxel (if any) is below the player."""
@@ -872,7 +1030,7 @@ class Game:
         self.surfs = define_surfaces(self.os_window)    # Dict of Pygame Surfaces (including pygame.display)
         pygame.display.set_caption("Isometric grid test")
         self.colors = define_colors()                   # Dict of Pygame Colors
-        self.moves = define_moves()                     # Dict of player movements
+        # self.moves = define_moves()                     # Dict of player movements
         self.keys = define_held_keys()                  # Dict of which keyboard inputs are being held down
         self.settings = define_settings()               # Dict of settings
         pygame.mouse.set_visible(False)                 # Hide the OS mouse icon
@@ -913,7 +1071,8 @@ class Game:
         self.update_held_keys_effects()
         # self.update_player_actions()
         self.player.update_actions()
-        self.update_player_movement()
+        self.player.update_movement()
+        # self.update_player_movement()
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
@@ -1240,19 +1399,13 @@ class Game:
             # TODO: Animate discrete tile movement
             # TODO: discrete tile movement continues until player is perfectly on a tile
             case pygame.K_j:
-                self.moves['move_down_to_tile'] = True
+                self.player.moves['move_down_to_tile'] = True
             case pygame.K_k:
-                pos = self.player.pos
-                self.player.pos = (pos[0],pos[1] + 1)
-                # logger.debug("Move Up")
+                self.player.moves['move_up_to_tile'] = True
             case pygame.K_h:
-                pos = self.player.pos
-                self.player.pos = (pos[0] - 1 , pos[1])
-                # logger.debug("Move Left")
+                self.player.moves['move_left_to_tile'] = True
             case pygame.K_l:
-                pos = self.player.pos
-                self.player.pos = (pos[0] + 1 , pos[1])
-                # logger.debug("Move Right")
+                self.player.moves['move_right_to_tile'] = True
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
@@ -1392,10 +1545,10 @@ class Game:
 
     def update_held_keys_effects_player_movement(self) -> None:
         # Free player movement
-        self.moves['move_down']  = self.keys['key_s']
-        self.moves['move_up']    = self.keys['key_w']
-        self.moves['move_left']  = self.keys['key_a']
-        self.moves['move_right'] = self.keys['key_d']
+        self.player.moves['move_down']  = self.keys['key_s']
+        self.player.moves['move_up']    = self.keys['key_w']
+        self.player.moves['move_left']  = self.keys['key_a']
+        self.player.moves['move_right'] = self.keys['key_d']
 
     # TODO: move to Player
     def update_player_movement(self) -> None:
