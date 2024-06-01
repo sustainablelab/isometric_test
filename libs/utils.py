@@ -208,7 +208,7 @@ def define_surfaces(os_window:OsWindow) -> dict:
     surfs['surf_game_art'] = pygame.Surface(os_window.size, flags=pygame.SRCALPHA)
 
     # Temporary drawing surface -- draw on this, blit the drawn portion, then clear this.
-    surfs['surf_draw'] = pygame.Surface(surfs['surf_game_art'].get_size(), flags=pygame.SRCALPHA)
+    surfs['surf_alpha'] = pygame.Surface(surfs['surf_game_art'].get_size(), flags=pygame.SRCALPHA)
 
     # This surface is populated later when Game instantiates RomanizedChars
     surfs['surf_romanized_chars'] = None
@@ -286,7 +286,7 @@ def define_colors() -> dict:
     colors['color_voxel_right'] =     Color(120,120,250,255)
     colors['color_grid_x_axis'] = Color(100,150,200,255)
     colors['color_grid_y_axis'] = Color(200,100,200,255)
-    colors['color_floor_solid'] = Color(70,40,130)
+    colors['color_floor_solid'] = Color(70,40,130,200)
     floor = colors['color_floor_solid']
     colors['color_floor_shadow'] = Color(floor.r-20, floor.g-20, floor.b-40)
     colors['color_floor_shadow_light'] = Color(floor.r-5, floor.g-5, floor.b-10)

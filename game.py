@@ -30,13 +30,14 @@
         This does not fix it.
     Otherwise, round player's position coordinate to next whole number to determine draw order. That should fix it.
         Yes, this fixes it. See "THIS FIXES THE ARTIFACT WHERE PLAYER IS HIDDEN BEHIND A VOXEL"
+    I fixed another instance of this artifact. See "THIS FIXES YET ANOTHER ARTIFACT WHERE PLAYER IS BEHIND A VOXEL"
 [x] Update self.pos_start anytime position is back on a tile
 [x] Add controls for moving in discrete steps:
     [x] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
         [x] But end free movement on a tile: continue movement until character is on a tile
     [x] h,j,k,l become moving to discrete tiles
         [x] if the player is not on a discrete tile, this key puts them onto one
-        [ ] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
+        [x] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
             is just for dev so I have a way to nudge the character without
             collision detection rules 
             I made nudge, but it is broken now that I made discrete movement animated.
@@ -46,10 +47,16 @@
     In fact, I just turned 'update_movement_free' into a copy of 'update_movement_discrete'!
     The only difference is how key-up is handled.
 [x] Fix free movement so that tapping movement keys does not get player stuck off grid
+[x] Fix bug: rendering of player slow and messed up when there is only one voxel on the map
+    * I was drawing the player over and over in the same frame if the player
+      was at a grid location before the first voxel in the map.
+    * The fix: check if the player has been rendered yet. Only render the player once.
+LEFT OFF HERE
+[ ] * Add a 'z' value to tiles in tile_map.layout and voxels made from the tile_map
 [ ] Fix free movement and discrete movement for moving in two directions at the same time.
-    * Discrete movement does this weird teleport bug
-    * Free movement ends with moving in a cardinal direction
-    * After turning free movement into discrete movement, free movement is lots of weird teleport bugs
+    * Discrete diagonal movement does this weird teleport bug
+    * Free diagonal movement is lots of those weird teleport bugs
+    * Free diagonal movement sometimes puts the player off grid
 [ ] Refactor collision detection out to its own section
     [x] use keys dict to set a moves dict
     [ ] then handle collision detection in its own function that just uses the moves dict
@@ -497,10 +504,6 @@ class Player:
         # G = (int(self.pos[0]), int(self.pos[1])) # No, don't just integer truncate
         # If partway between voxels, use whichever voxel player is closer to
         G = (round(self.pos[0]), round(self.pos[1]))
-        if self.game.debug_hud:
-            # Debug artifact: player is behind part of a wall
-            self.game.debug_hud.add_text(self.pos)
-            self.game.debug_hud.add_text(G)
         tiles = self.game.tile_map.layout
         voxels = self.game.voxel_artwork.layout
         if G in tiles:
@@ -670,6 +673,11 @@ class TileMap:
                 step_height += 3
                 layout[(0,i)] = {'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
 
+        elif 1:
+            ### Make floor tiles
+            layout[(0,0)] = {'z':0,'height':10, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,-1)] = {'z':0,'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,-2)] = {'z':-5,'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
         else:
             ### Make walls
             # Outer walls
@@ -771,7 +779,8 @@ class VoxelArtwork:
                            (G[0]+1,G[1]  ),
                            (G[0]+1,G[1]+1),
                            (G[0]  ,G[1]+1)]
-            voxel_artwork[G] = {'grid_points':grid_points, 'height':height, 'style':wall['style']}
+            voxel_artwork[G] = {'z':wall['z'], 'grid_points':grid_points, 'height':height, 'style':wall['style']}
+            # See "adjust_voxel_size" and "Draw voxels!"
         return voxel_artwork
 
 
@@ -838,10 +847,11 @@ class VoxelArtwork:
                     (Gs[3][0] + d, Gs[3][1] - d)
                     ]
             # Copy height and style
+            z = self.layout[G]['z']
             height = self.layout[G]['height']
             style = self.layout[G]['style']
             # Apply self.percentage and keep the voxel centered on the tile
-            adjusted_voxel_artwork[G] = {'grid_points':adjusted_grid_points,'height':height,'style':style}
+            adjusted_voxel_artwork[G] = {'z':z, 'grid_points':adjusted_grid_points,'height':height,'style':style}
         return adjusted_voxel_artwork
 
     def old_adjust_voxel_size(self) -> list:
@@ -869,6 +879,13 @@ class VoxelArtwork:
         """Render voxels, player, and mouse."""
         voxels = self.adjust_voxel_size()
         player = self.game.player
+        player.is_rendered = False
+        # Why do I track if the player is rendered yet?
+        #   Say there are NO VOXELS on the grid until about the middle of the grid.
+        #   Then 'voxel_index' will be 0 for a long time while I iterate over the list of grid points.
+        #   Say the player is at voxel_index 0 or 1 or whatever.
+        #   Then the player will be drawn over and over and over again until that first voxel is finally drawn.
+        #   This tanks the framerate! And it superimposes many images of the player onto the same frame.
         mouse = self.game.grid.xfm_pg(pygame.mouse.get_pos())
 
         ### voxels[G] = {'grid_points':grid_points, 'height':height, 'style':wall['style']}
@@ -899,7 +916,6 @@ class VoxelArtwork:
         player_draw_index = 0; mouse_draw_index = 0; voxel_index=0
         for G in grid_list:
             if G in voxels:
-                voxel_index += 1
                 # if (player.pos[0] >= G[0]) and (player.pos[1] <= G[1]): # NO!
                 # 'round(player.pos[n])' -- THIS FIXES THE ARTIFACT WHERE PLAYER IS HIDDEN BEHIND A VOXEL
                 if (round(player.pos[0]) >= G[0]) and (round(player.pos[1]) <= G[1]):
@@ -907,15 +923,27 @@ class VoxelArtwork:
                     player_draw_index = voxel_index + 1
                 if (mouse[0] >= G[0]) and (mouse[1] <= G[1]):
                     mouse_draw_index = voxel_index + 1
+                # Increment voxel index at the end of the loop (not the beginning)!
+                #   THIS FIXES YET ANOTHER ARTIFACT WHERE PLAYER IS BEHIND A VOXEL
+                voxel_index += 1
 
-        # for i,G in enumerate(grid_list):
+        ### Draw voxels!
         voxel_index = 0 # draw_index
         for G in grid_list:
             if G in voxels:
-                voxel_index += 1
                 ### Draw voxel
-                # Convert the base quad grid points to pixel points
-                Ps = [self.game.grid.xfm_gp(grid_point) for grid_point in voxels[G]['grid_points']]
+                # Convert the base quad grid points (see make_voxels_from_tile_map) to pixel points
+                #
+                # grid_points -- list of four grid coordinates
+                #     The intent is these coordinates are the vertices of a rectangular
+                #     grid tile. The four coordinates are listed going clockwise around
+                #     the rectangle starting at the "lower left" of the rectangle.
+                #
+                # Xfm the four grid points to pixel space
+                _Ps = [self.game.grid.xfm_gp(grid_point) for grid_point in voxels[G]['grid_points']]
+                # Adjust the z-location of these four points
+                z = voxels[G]['z']
+                Ps = [(P[0],P[1] - z*self.game.grid.scale) for P in _Ps]
                 # Describe the three visible surfaces of the voxel as quads
                 ### T: Top, L: Left, R: Right
                 height = voxels[G]['height']
@@ -940,9 +968,12 @@ class VoxelArtwork:
                 # Check if mouse is at this voxel
                 if G == mouse:
                     # Draw mouse location highlighting the top of the voxel
-                    points_zh = [(P[0], P[1] - height*self.game.grid.scale) for P in Ps]
+                    points_zh = [(P[0], P[1] - (z + height)*self.game.grid.scale) for P in Ps]
                     # Draw a yellow highlight above the voxel
                     pygame.draw.polygon(surf, Color(200,200,100), points_zh)
+                # Increment voxel index at the end of the loop (not the beginning)!
+                #   THIS FIXES YET ANOTHER ARTIFACT WHERE PLAYER IS BEHIND A VOXEL
+                voxel_index += 1
             # TODO: do not draw green highlight if drawing a yellow highlight
             # Check draw order for mouse
             if voxel_index == mouse_draw_index:
@@ -950,8 +981,10 @@ class VoxelArtwork:
                 self.game.render_grid_tile_highlighted_at_mouse()
             # Check draw order for player
             if voxel_index == player_draw_index:
-                # Draw player
-                player.render(surf)
+                if not player.is_rendered:
+                    # Draw player
+                    player.render(surf)
+                    player.is_rendered = True
         # DEBUG
         ### DebugHud.add_text(debug_text:str)
         if self.game.debug_hud:
@@ -965,8 +998,10 @@ class VoxelArtwork:
             self.game.render_grid_tile_highlighted_at_mouse()
         # If player is in front of all voxels, player has not been drawn yet!
         if player_draw_index >= len(voxels):
-            # Draw the player now
-            player.render(surf)
+            if not player.is_rendered:
+                # Draw the player now
+                player.render(surf)
+                player.is_rendered = True
 
     def old_render(self, surf) -> None:
         """Render voxels and player.
@@ -988,7 +1023,7 @@ class VoxelArtwork:
         test to determine the player index in the list of voxels.
 
         Iterate over all voxels and draw each one. When voxel index matches
-        player index, draw draw player.
+        player index, draw player. But only draw player once!
         """
         # TEMPORARY: Adjust size of voxels based on percentage that it fills its tile
         # TODO: give each voxel its own percentage
@@ -1177,21 +1212,13 @@ class Game:
             ry = modulo(dy,1)
             dx = subtract(self.player.pos_start[0], self.player.pos[0])
             rx = modulo(dx,1)
-            self.debug_hud.add_text(f"self.player.pos_start: {self.player.pos_start}, "
-                                         f"self.player.pos: {self.player.pos}, "
-                                         f"dx%1: {rx%1}, dy%1: {ry}")
+            self.debug_hud.add_text(f"self.player.pos: {self.player.pos}")
+            self.debug_hud.add_text(f"dx%1: {rx%1}, dy%1: {ry}")
 
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
         self.surfs['surf_game_art'].fill(self.colors['color_game_art_bgnd'])
-
-        # TEMPORARY: Draw a floor as a single giant square
-        a = self.tile_map.a
-        b = self.tile_map.b
-        points = [self.grid.xfm_gp(G) for G in [(a,a), (b,a), (b,b), (a,b)]]
-        ### polygon(surface, color, points) -> Rect
-        pygame.draw.polygon(self.surfs['surf_game_art'], self.colors['color_floor_solid'], points)
 
         # Draw grid
         if self.settings['setting_debug']:
@@ -1218,6 +1245,17 @@ class Game:
             # Display keystrokes at bottom of screen in debug font
             self.render_debug_keystrokes(self.surfs['surf_game_art'])
 
+        # # TEMPORARY: Draw a floor as a single giant square
+        # TODO: To "slice" a transparent plane like this through the art, I
+        # have to render things BELOW THE FLOOR before I draw the floor and
+        # things ABOVE THE FLOOR after I draw the floor!
+        # a = self.tile_map.a
+        # b = self.tile_map.b
+        # points = [self.grid.xfm_gp(G) for G in [(a,a), (b,a), (b,b), (a,b)]]
+        # ### polygon(surface, color, points) -> Rect
+        # pygame.draw.polygon(self.surfs['surf_alpha'], self.colors['color_floor_solid'], points)
+        # self.surfs['surf_game_art'].blit(self.surfs['surf_alpha'], (0,0), special_flags=pygame.BLEND_ALPHA_SDL2)
+        # self.surfs['surf_alpha'].fill(self.colors['color_clear'])
 
         # Copy game art to OS window
         ### blit(source, dest, area=None, special_flags=0) -> Rect
@@ -1261,7 +1299,7 @@ class Game:
         pygame.display.update()
 
         ### clock.tick(framerate=0) -> milliseconds
-        self.clock.tick(10)
+        self.clock.tick(60)
 
     def add_debug_text(self) -> None:
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
@@ -1273,7 +1311,8 @@ class Game:
         # Which voxel is below the player
         self.debug_hud.add_text(f"self.player.voxel: {self.player.voxel}")
         # Get height at mouse in game coordinates
-        self.debug_hud.add_text(f"mouse_height: {self.mouses['mouse_height']}")
+        self.debug_hud.add_text(f"self.mouses['mouse_z']: {self.mouses['mouse_z']}")
+        self.debug_hud.add_text(f"self.mouses['mouse_height']: {self.mouses['mouse_height']}")
         # Debug discrete motion
         pos_start = self.player.pos_start
         self.debug_hud.add_text(f"self.player.pos_start: ({pos_start[0]},{pos_start[1]}), "
@@ -1782,11 +1821,13 @@ class Game:
         """Mouse height is the top of the voxel where the mouse is hovering."""
         G = self.grid.xfm_pg(pygame.mouse.get_pos())
         voxels = self.voxel_artwork.layout
-        h = 0
+        h = 0; z = 0
         if G in voxels:
             h = voxels[G]['height']
-        # Store this height value for use elsewhere
+            z = voxels[G]['z']
+        # Store these values for use elsewhere
         self.mouses['mouse_height'] = h
+        self.mouses['mouse_z'] = z
 
     # BELOW HERE IS RENDERING FOR DEBUG / DEV
 
