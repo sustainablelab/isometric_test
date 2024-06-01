@@ -24,20 +24,32 @@
 [x] Zoom to fit
 [x] Pan
 [x] Fullscreen
-[ ] Fix artifact: player "behind" voxel
+[x] Fix artifact: player "behind" voxel
     Frank and I think this is because player is not on grid.
     So see what happens after I fix that (player always on grid).
-    Otherwise, round player's y-position up to next whole number. That should fix it.
-[ ] Update self.pos_start anytime position is back on a tile
-[ ] Add controls for moving in discrete steps:
+        This does not fix it.
+    Otherwise, round player's position coordinate to next whole number to determine draw order. That should fix it.
+        Yes, this fixes it. See "THIS FIXES THE ARTIFACT WHERE PLAYER IS HIDDEN BEHIND A VOXEL"
+[x] Update self.pos_start anytime position is back on a tile
+[x] Add controls for moving in discrete steps:
     [x] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
-        [ ] But end free movement on a tile: continue movement until character is on a tile
+        [x] But end free movement on a tile: continue movement until character is on a tile
     [x] h,j,k,l become moving to discrete tiles
-        [ ] if the player is not on a discrete tile, this key puts them onto one
+        [x] if the player is not on a discrete tile, this key puts them onto one
         [ ] nudge the character -- change Shift+h,j,k,l to Alt+h,j,k,l-- this
             is just for dev so I have a way to nudge the character without
             collision detection rules 
-    [ ] Apply collision detection to discrete movement
+            I made nudge, but it is broken now that I made discrete movement animated.
+    [x] Apply collision detection to discrete movement
+[x] Fix free movement so that changing direction between tiles does not leave player stuck off grid
+    This is the same fix I used for discrete movement.
+    In fact, I just turned 'update_movement_free' into a copy of 'update_movement_discrete'!
+    The only difference is how key-up is handled.
+[x] Fix free movement so that tapping movement keys does not get player stuck off grid
+[ ] Fix free movement and discrete movement for moving in two directions at the same time.
+    * Discrete movement does this weird teleport bug
+    * Free movement ends with moving in a cardinal direction
+    * After turning free movement into discrete movement, free movement is lots of weird teleport bugs
 [ ] Refactor collision detection out to its own section
     [x] use keys dict to set a moves dict
     [ ] then handle collision detection in its own function that just uses the moves dict
@@ -150,14 +162,32 @@ class Player:
         if self.game.debug_hud:
             self.game.debug_hud.add_text(f"self.moves: {self.moves}")
 
-        # Track moving or not moving
+        # Track moving or not moving for animation purposes
         if self.moves['move_down'] or self.moves['move_up'] or self.moves['move_left'] or self.moves['move_right']:
             self.moving = True
         else:
             self.moving = False
 
-        self.update_movement_discrete()
-        self.update_movement_free()
+        if 1:
+            if self.moves['move_down_to_tile'] or self.moves['move_down']:
+                self.update_movement_state()
+                self.update_movement_pos('down')
+                self.handle_collision('down')
+            if self.moves['move_up_to_tile'] or self.moves['move_up']:
+                self.update_movement_state()
+                self.update_movement_pos('up')
+                self.handle_collision('up')
+            if self.moves['move_left_to_tile'] or self.moves['move_left']:
+                self.update_movement_state()
+                self.update_movement_pos('left')
+                self.handle_collision('left')
+            if self.moves['move_right_to_tile'] or self.moves['move_right']:
+                self.update_movement_state()
+                self.update_movement_pos('right')
+                self.handle_collision('right')
+        else:
+            self.update_movement_discrete()
+            self.update_movement_free()
 
 
     # TODO: BUG: tap "s", then while player is still walking after I release
@@ -196,6 +226,7 @@ class Player:
         pos = self.pos
         move_the_entire_tile_in_one_tick = False
         match direction:
+
             case 'down':
                 if move_the_entire_tile_in_one_tick:
                     self.pos = (pos[0],pos[1] - 1)
@@ -207,6 +238,8 @@ class Player:
                     # Clear state
                     self.moves['move_down_to_tile'] = False
                     self.is_on_tile = True
+                    self.pos_start = self.pos
+
             case 'up':
                 if move_the_entire_tile_in_one_tick:
                     self.pos = (pos[0], pos[1] + 1)
@@ -218,6 +251,8 @@ class Player:
                     # Clear state
                     self.moves['move_up_to_tile'] = False
                     self.is_on_tile = True
+                    self.pos_start = self.pos
+
             case 'left':
                 if move_the_entire_tile_in_one_tick:
                     self.pos = (pos[0] - 1 , pos[1])
@@ -229,6 +264,7 @@ class Player:
                     # Clear state
                     self.moves['move_left_to_tile'] = False
                     self.is_on_tile = True
+                    self.pos_start = self.pos
 
             case 'right':
                 if move_the_entire_tile_in_one_tick:
@@ -239,6 +275,7 @@ class Player:
                     self.pos = (self.pos_start[0] + 1, self.pos_start[1])
                     self.moves['move_right_to_tile'] = False
                     self.is_on_tile = True
+                    self.pos_start = self.pos
 
     def handle_collision(self, direction:str) -> None:
         match direction:
@@ -301,17 +338,32 @@ class Player:
         self.moves = define_moves()
 
     def update_movement_free(self) -> None:
-        # TODO: if I hold 'w' and 's', I break the "end on a tile behavior"... Why?
+        if self.moves['move_down']:
+            self.update_movement_state()
+            self.update_movement_pos('down')
+            self.handle_collision('down')
+        if self.moves['move_up']:
+            self.update_movement_state()
+            self.update_movement_pos('up')
+            self.handle_collision('up')
+        if self.moves['move_left']:
+            self.update_movement_state()
+            self.update_movement_pos('left')
+            self.handle_collision('left')
+        if self.moves['move_right']:
+            self.update_movement_state()
+            self.update_movement_pos('right')
+            self.handle_collision('right')
+
+    def old_update_movement_free(self) -> None:
+        # TODO: if I tap 'w' and then tap 's' while mid-tile, I break the "end
+        # on a tile behavior"... Why?
         #   Because 'move_down' and 'move_up' are both true.
         #   Another problem: the start_pos is messed up.
         # Handle free movement
         if self.moves['move_down']:
-            if self.is_on_tile:
-                # Just started moving. Record initial position.
-                self.pos_start = self.pos
-                self.is_on_tile = False
-            pos = self.pos
-            speed = self.speed_walk
+            self.update_movement_state()
+            pos = self.pos; speed = self.speed_walk
             # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
             if self.moves['move_left'] or self.moves['move_right']:
                 speed *= 0.7
@@ -345,15 +397,12 @@ class Player:
                 self.pos_start = self.pos
 
         if self.moves['move_up']:
-            if self.is_on_tile:
-                # Just started moving. Record initial position.
-                self.pos_start = self.pos
-                self.is_on_tile = False
-            pos = self.pos
-            speed = self.speed_walk
+            self.update_movement_state()
+            pos = self.pos; speed = self.speed_walk
             # Scale walking speed if moving UP+LEFT or UP+RIGHT
             if self.moves['move_left'] or self.moves['move_right']:
                 speed *= 0.7
+            # Set new position
             self.pos = (pos[0], add(pos[1], speed))
             # Collision detection
             neighbor_x = int(self.pos[0])
@@ -1345,58 +1394,97 @@ class Game:
         kmod = pygame.key.get_mods()
         # Key behavior is modal: keyup has no significance while casting
         if not self.player.is_casting:
-            match event.key:
-                case pygame.K_LSHIFT:
-                    self.keys['key_Shift_Space'] = False
-                    # self.keys['key_A'] = False
-                    # self.keys['key_B'] = False
-                    # self.keys['key_C'] = False
-                    # self.keys['key_D'] = False
-                    self.keys['key_E'] = False
-                    self.keys['key_F'] = False
-                case pygame.K_SPACE:
-                    self.keys['key_Space'] = False
-                    self.keys['key_Shift_Space'] = False
-                # case pygame.K_a:
-                #     self.keys['key_A'] = False
-                #     self.keys['key_a'] = False
-                # case pygame.K_b:
-                #     self.keys['key_B'] = False
-                #     self.keys['key_b'] = False
-                # case pygame.K_c:
-                #     self.keys['key_C'] = False
-                #     self.keys['key_c'] = False
-                # case pygame.K_d:
-                #     self.keys['key_D'] = False
-                #     self.keys['key_d'] = False
-                case pygame.K_e:
-                    self.keys['key_E'] = False
-                    self.keys['key_e'] = False
-                case pygame.K_f:
-                    self.keys['key_F'] = False
-                    self.keys['key_f'] = False
-                # Free player movement
-                # TODO: continue to move player until player is on tile
-                case pygame.K_s: # Move Down
-                    self.keys['key_s'] = False
-                    if not self.keys['key_w']: # Avoid bug when player holds down 's' and 'w' and releases 's'
-                        if not self.player.is_on_tile:
-                            # Set "start" position to nearest tile
-                            self.player.pos_start = (self.player.pos[0], round(self.player.pos[1]))
-                            self.player.moves['move_down_to_tile'] = True
-                case pygame.K_w: # Move Up
-                    self.keys['key_w'] = False
-                    if not self.keys['key_s']: # Avoid bug when player holds down 'w' and 's' and releases 'w'
-                        if not self.player.is_on_tile:
-                            # Set "start" position to nearest tile
-                            self.player.pos_start = (self.player.pos[0], round(self.player.pos[1]))
-                            self.player.moves['move_up_to_tile'] = True
-                case pygame.K_a: # Move Left
-                    self.keys['key_a'] = False
-                case pygame.K_d: # Move Right
-                    self.keys['key_d'] = False
-                case _:
+            self.handle_keyup_movement(event)
+            self.handle_keyup_other(event)
+
+    def handle_keyup_movement(self, event) -> None:
+        """Continue to move player until player is on tile"""
+        kmod = pygame.key.get_mods()
+        match event.key:
+
+            case pygame.K_s: # Release 's' (was moving down)
+                self.keys['key_s'] = False
+                if self.keys['key_w']: # Player holds down 's' and 'w' and releases 's'
                     pass
+                else: # Player holds down 's' and releases 's' ('w' was not held down)
+                    if not self.player.is_on_tile:
+                        # Set "start" position to nearest tile
+                        self.player.pos_start = (self.player.pos[0], round(self.player.pos[1]))
+                        self.player.moves['move_down_to_tile'] = True
+
+            case pygame.K_w: # Release 'w' (was moving up)
+                self.keys['key_w'] = False
+                if self.keys['key_s']: # Player holds down 'w' and 's' and releases 'w'
+                    pass
+                else: # Player holds down 'w' and releases 'w' ('s' was not held down)
+                    if not self.player.is_on_tile:
+                        # Set "start" position to nearest tile
+                        self.player.pos_start = (self.player.pos[0], round(self.player.pos[1]))
+                        self.player.moves['move_up_to_tile'] = True
+
+            case pygame.K_a: # Release 'a' (was moving left)
+                self.keys['key_a'] = False
+                if self.keys['key_d']: # Player holds down 'a' and 'd' and releases 'a'
+                    pass
+                else: # Player holds down 'a' and releases 'a' ('d' was not held down)
+                    if not self.player.is_on_tile:
+                        # Set "start" position to nearest tile
+                        self.player.pos_start = (round(self.player.pos[0]), self.player.pos[1])
+                        self.player.moves['move_left_to_tile'] = True
+
+            case pygame.K_d: # Release 'd' (was moving right)
+                self.keys['key_d'] = False
+                if self.keys['key_a']: # Player holds down 'd' and 'a' and releases 'd'
+                    pass
+                else: # Player holds down 'd' and releases 'd' ('a' was not held down)
+                    if not self.player.is_on_tile:
+                        # Set "start" position to nearest tile
+                        self.player.pos_start = (round(self.player.pos[0]), self.player.pos[1])
+                        self.player.moves['move_right_to_tile'] = True
+
+            case _: pass
+
+    def handle_keyup_other(self, event) -> None:
+        kmod = pygame.key.get_mods()
+        match event.key:
+
+            case pygame.K_LSHIFT:
+                self.keys['key_Shift_Space'] = False
+                # self.keys['key_A'] = False
+                # self.keys['key_B'] = False
+                # self.keys['key_C'] = False
+                # self.keys['key_D'] = False
+                self.keys['key_E'] = False
+                self.keys['key_F'] = False
+
+            case pygame.K_SPACE:
+                self.keys['key_Space'] = False
+                self.keys['key_Shift_Space'] = False
+
+            # case pygame.K_a:
+            #     self.keys['key_A'] = False
+            #     self.keys['key_a'] = False
+            # case pygame.K_b:
+            #     self.keys['key_B'] = False
+            #     self.keys['key_b'] = False
+            # case pygame.K_c:
+            #     self.keys['key_C'] = False
+            #     self.keys['key_c'] = False
+            # case pygame.K_d:
+            #     self.keys['key_D'] = False
+            #     self.keys['key_d'] = False
+
+            case pygame.K_e:
+                self.keys['key_E'] = False
+                self.keys['key_e'] = False
+
+            case pygame.K_f:
+                self.keys['key_F'] = False
+                self.keys['key_f'] = False
+
+            case _:
+                pass
+
 
     def handle_keydown(self, event) -> None:
         # Key behavior is modal
@@ -1581,35 +1669,67 @@ class Game:
                     self.keys['key_F'] = True
                 else:
                     self.keys['key_f'] = True
+
             # Free player movement
+
             case pygame.K_s: # Move Down
-                if kmod & pygame.KMOD_SHIFT:
+                if kmod & pygame.KMOD_SHIFT: # DEV
                     # 'Shift+J' nudges player
                     pos = self.player.pos
                     self.player.pos = (pos[0], subtract(pos[1], self.player.speed_walk))
-                else:
+                else: # GAME
                     self.keys['key_s'] = True
+                    if self.player.moves['move_up_to_tile']:
+                        # Was going up, then released 'w' and tapped 's' before getting to next tile
+                        self.player.moves['move_up_to_tile'] = False
+                        # Go back to the last tile you were on while moving up
+                        start = self.player.pos_start
+                        self.player.pos_start = (start[0], start[1]+1)
+
             case pygame.K_w: # Move Up
-                if kmod & pygame.KMOD_SHIFT:
+                if kmod & pygame.KMOD_SHIFT: # DEV
                     # 'Shift+K' nudges player
                     pos = self.player.pos
                     self.player.pos = (pos[0], add(pos[1], self.player.speed_walk))
-                else:
+                else: # GAME
                     self.keys['key_w'] = True
+                    if self.player.moves['move_down_to_tile']:
+                        # Was going down, then released 's' and tapped 'w' before getting to next tile
+                        self.player.moves['move_down_to_tile'] = False
+                        # Go back to the last tile you were on while moving down
+                        start = self.player.pos_start
+                        self.player.pos_start = (start[0], start[1]-1)
+
             case pygame.K_a: # Move Left
-                if kmod & pygame.KMOD_SHIFT:
+                if kmod & pygame.KMOD_SHIFT: # DEV
                     # 'Shift+H' nudges player
                     pos = self.player.pos
                     self.player.pos = (subtract(pos[0], self.player.speed_walk),  pos[1])
-                else:
+                else: # GAME
                     self.keys['key_a'] = True
+                    if self.player.moves['move_right_to_tile']:
+                        # Was going right, then released 'd' and tapped 'a' before getting to next tile
+                        self.player.moves['move_right_to_tile'] = False
+                        # Go back to the last tile you were on while moving right
+                        start = self.player.pos_start
+                        self.player.pos_start = (start[0]+1,start[1])
+                        # self.player.pos_start = (start[0],start[1])
+
             case pygame.K_d: # Move Right
-                if kmod & pygame.KMOD_SHIFT:
+                if kmod & pygame.KMOD_SHIFT: # DEV
                     # 'Shift+L' nudges player
                     pos = self.player.pos
                     self.player.pos = (add(pos[0], self.player.speed_walk),  pos[1])
-                else:
+                else: # GAME
                     self.keys['key_d'] = True
+                    if self.player.moves['move_left_to_tile']:
+                        # Was going left, then released 'a' and tapped 'd' before getting to next tile
+                        self.player.moves['move_left_to_tile'] = False
+                        # Go back to the last tile you were on while moving left
+                        start = self.player.pos_start
+                        self.player.pos_start = (start[0]-1,start[1])
+                        # self.player.pos_start = (start[0],start[1])
+
             case _:
                 pass
 
