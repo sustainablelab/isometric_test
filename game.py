@@ -86,120 +86,13 @@ import os
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"          # Set pygame env var to hide "Hello" msg
 import pygame
 from pygame import Color
-from libs.utils import setup_logging, load_image, OsWindow, Text, DebugHud, HelpHud
+from libs.utils import setup_logging, load_image, OsWindow, Text, HelpHud, DebugHud, define_surfaces, define_actions, define_moves, define_held_keys, define_colors, define_settings, floor, ceiling, add, subtract, modulo
 
 def shutdown() -> None:
     if logger: logger.info("Shutdown")
     # Clean up pygame
     pygame.font.quit()                                  # Uninitialize the font module
     pygame.quit()                                       # Uninitialize all pygame modules
-
-def define_surfaces(os_window:OsWindow) -> dict:
-    """Return dictionary of pygame Surfaces.
-
-    :param os_window:OsWindow -- defines OS Window 'size' and 'flags'
-    :return dict -- {'surf_name': pygame.Surface, ...}
-    """
-    surfs = {}                                      # Dict of Pygame Surfaces
-
-    # The first surface is the OS Window. Initialize the window for display.
-    ### set_mode(size=(0, 0), flags=0, depth=0, display=0, vsync=0) -> Surface
-    surfs['surf_os_window'] = pygame.display.set_mode(os_window.size, os_window.flags)
-
-    # Blend artwork on the game art surface.
-    # This is the final surface that is  copied to the OS Window.
-    surfs['surf_game_art'] = pygame.Surface(os_window.size, flags=pygame.SRCALPHA)
-
-    # Temporary drawing surface -- draw on this, blit the drawn portion, then clear this.
-    surfs['surf_draw'] = pygame.Surface(surfs['surf_game_art'].get_size(), flags=pygame.SRCALPHA)
-
-    # This surface is populated later when Game instantiates RomanizedChars
-    surfs['surf_romanized_chars'] = None
-
-    return surfs
-
-def define_actions() -> dict:
-    actions = {}
-    actions['action_levitate'] = False
-    return actions
-
-def define_moves() -> dict:
-    moves = {}
-    # Free movement
-    moves['move_down']  = False
-    moves['move_up']    = False
-    moves['move_right'] = False
-    moves['move_left']  = False
-    # Discrete movement
-    moves['move_down_to_tile']  = False
-    moves['move_up_to_tile']    = False
-    moves['move_right_to_tile'] = False
-    moves['move_left_to_tile']  = False
-    return moves
-
-def define_held_keys() -> dict:
-    """Return a dict to track which keys are held down.
-
-    These are the keys, and their Shifted versions, that continue to have
-    effect while held.
-
-    (As opposed to a key triggering only a single-shot when pressed.)
-    """
-    keys = {}
-    # Special
-    keys['key_Space'] = False
-    keys['key_Shift_Space'] = False
-    # Xfm matrix
-    keys['key_A'] = False
-    # keys['key_a'] = False # Repurposed
-    keys['key_B'] = False
-    keys['key_b'] = False
-    keys['key_C'] = False
-    keys['key_c'] = False
-    keys['key_D'] = False
-    # keys['key_d'] = False # Repurposed
-    keys['key_E'] = False
-    keys['key_e'] = False
-    keys['key_F'] = False
-    keys['key_f'] = False
-    # Discrete Movement
-    keys['key_j'] = False
-    keys['key_k'] = False
-    keys['key_h'] = False
-    keys['key_l'] = False
-    # Free Movement
-    keys['key_s'] = False
-    keys['key_w'] = False
-    keys['key_a'] = False
-    keys['key_d'] = False
-    return keys
-
-def define_colors() -> dict:
-    colors = {}
-    colors['color_clear'] = Color(0,0,0,0)
-    colors['color_debug_hud'] = Color(255,255,255,255)
-    colors['color_help_hud'] = Color(200,150,100,255)
-    # colors['color_debug_keystrokes'] = Color(80,130,80)
-    colors['color_debug_keystrokes'] = Color(200,200,200)
-    colors['color_game_art_bgnd'] = Color(40,40,40,255)
-    colors['color_grid_lines'] =     Color(100,100,250,255)
-    colors['color_vertical_lines'] = Color(150,150,250,255)
-    colors['color_voxel_top'] =      Color(150,150,250,255)
-    colors['color_voxel_left'] =      Color(80,80,250,255)
-    colors['color_voxel_right'] =     Color(120,120,250,255)
-    colors['color_grid_x_axis'] = Color(100,150,200,255)
-    colors['color_grid_y_axis'] = Color(200,100,200,255)
-    colors['color_floor_solid'] = Color(70,40,130)
-    floor = colors['color_floor_solid']
-    colors['color_floor_shadow'] = Color(floor.r-20, floor.g-20, floor.b-40)
-    colors['color_floor_shadow_light'] = Color(floor.r-5, floor.g-5, floor.b-10)
-    return colors
-
-def define_settings() -> dict:
-    settings = {}
-    settings['setting_show_help'] = True
-    settings['setting_debug'] = False
-    return settings
 
 @dataclass
 class LineSeg:
@@ -218,7 +111,7 @@ class Wall:
 
     >>> wall = Wall(points=[(i,-2) for i in range(-2,2)], height=25)
     >>> print(wall)
-    Wall(points=[(-2, -2), (-1, -2), (0, -2), (1, -2)], height=25)
+    Wall(points=[(-2, -2), (-1, -2), (0, -2), (1, -2)], height=25, style='style_skeleton_frame')
     """
     points:list
     height:int
@@ -266,79 +159,151 @@ class Player:
         self.update_movement_discrete()
         self.update_movement_free()
 
+
+    # TODO: BUG: tap "s", then while player is still walking after I release
+    # "s", press "w": player goes off-tile.
+    # I think this happens because I end up in a state where self.pos_start
+    # was set by "s", but I am now checking the "update_movement_pos" condition
+    # based on pressing "w".
     def update_movement_discrete(self) -> None:
         # Handle discrete movement
         if self.moves['move_down_to_tile']:
-            if self.is_on_tile:
-                # Just started moving. Record initial position.
-                self.pos_start = self.pos
-                self.is_on_tile = False
-            # Record position at start of this delta_t
-            pos = self.pos
-            move_the_entire_tile_in_one_tick = False
-            if move_the_entire_tile_in_one_tick:
-                self.pos = (pos[0],pos[1] - 1)
-            else:
-                self.pos = (pos[0], pos[1] - self.speed_walk)
-            # logger.debug("Move Down")
-            if self.pos[1] <= (self.pos_start[1] - 1):
-                # Clamp movement to next tile
-                self.pos = (self.pos_start[0],self.pos_start[1] - 1)
-                # Clear state
-                self.moves['move_down_to_tile'] = False
-                self.is_on_tile = True
+            self.update_movement_state()
+            self.update_movement_pos('down')
+            self.handle_collision('down')
         if self.moves['move_up_to_tile']:
-            if self.is_on_tile:
-                # Just started moving. Record initial position.
-                self.pos_start = self.pos
-                self.is_on_tile = False
-            # Record position at start of this delta_t
-            pos = self.pos
-            move_the_entire_tile_in_one_tick = False
-            if move_the_entire_tile_in_one_tick:
-                self.pos = (pos[0], pos[1] + 1)
-            else:
-                self.pos = (pos[0], pos[1] + self.speed_walk)
-            if self.pos[1] >= (self.pos_start[1] + 1):
-                # Clamp movement to next tile
-                self.pos = (self.pos_start[0], self.pos_start[1] + 1)
-                # Clear state
-                self.moves['move_up_to_tile'] = False
-                self.is_on_tile = True
+            self.update_movement_state()
+            self.update_movement_pos('up')
+            self.handle_collision('up')
         if self.moves['move_left_to_tile']:
-            if self.is_on_tile:
-                # Just started moving. Record initial position.
-                self.pos_start = self.pos
-                self.is_on_tile = False
-            # Record position at start of this delta_t
-            pos = self.pos
-            move_the_entire_tile_in_one_tick = False
-            if move_the_entire_tile_in_one_tick:
-                self.pos = (pos[0] - 1 , pos[1])
-            else:
-                self.pos = (pos[0] - self.speed_walk, pos[1])
-            if self.pos[0] <= (self.pos_start[0] - 1):
-                # Clamp movement to next tile
-                self.pos = (self.pos_start[0] - 1, self.pos_start[1])
-                # Clear state
-                self.moves['move_left_to_tile'] = False
-                self.is_on_tile = True
+            self.update_movement_state()
+            self.update_movement_pos('left')
+            self.handle_collision('left')
         if self.moves['move_right_to_tile']:
-            if self.is_on_tile:
-                self.pos_start = self.pos
-                self.is_on_tile = False
-            pos = self.pos
-            move_the_entire_tile_in_one_tick = False
-            if move_the_entire_tile_in_one_tick:
-                self.pos = (pos[0] + 1 , pos[1])
-            else:
-                self.pos = (pos[0] + self.speed_walk, pos[1])
-            if self.pos[0] >= (self.pos_start[0] + 1):
-                self.pos = (self.pos_start[0] + 1, self.pos_start[1])
-                self.moves['move_right_to_tile'] = False
-                self.is_on_tile = True
+            self.update_movement_state()
+            self.update_movement_pos('right')
+            self.handle_collision('right')
+
+    def update_movement_state(self) -> None:
+        """If moving on a tile, player is now off the tile"""
+        if self.is_on_tile:
+            # Just started moving. Record initial position.
+            self.pos_start = self.pos
+            self.is_on_tile = False
+
+    def update_movement_pos(self, direction:str) -> None:
+        # Record position at start of this delta_t
+        pos = self.pos
+        move_the_entire_tile_in_one_tick = False
+        match direction:
+            case 'down':
+                if move_the_entire_tile_in_one_tick:
+                    self.pos = (pos[0],pos[1] - 1)
+                else:
+                    self.pos = (pos[0], subtract(pos[1], self.speed_walk))
+                if self.pos[1] <= (self.pos_start[1] - 1):
+                    # Clamp movement to next tile
+                    self.pos = (self.pos_start[0],self.pos_start[1] - 1)
+                    # Clear state
+                    self.moves['move_down_to_tile'] = False
+                    self.is_on_tile = True
+            case 'up':
+                if move_the_entire_tile_in_one_tick:
+                    self.pos = (pos[0], pos[1] + 1)
+                else:
+                    self.pos = (pos[0], add(pos[1], self.speed_walk))
+                if self.pos[1] >= (self.pos_start[1] + 1):
+                    # Clamp movement to next tile
+                    self.pos = (self.pos_start[0], self.pos_start[1] + 1)
+                    # Clear state
+                    self.moves['move_up_to_tile'] = False
+                    self.is_on_tile = True
+            case 'left':
+                if move_the_entire_tile_in_one_tick:
+                    self.pos = (pos[0] - 1 , pos[1])
+                else:
+                    self.pos = (subtract(pos[0], self.speed_walk), pos[1])
+                if self.pos[0] <= (self.pos_start[0] - 1):
+                    # Clamp movement to next tile
+                    self.pos = (self.pos_start[0] - 1, self.pos_start[1])
+                    # Clear state
+                    self.moves['move_left_to_tile'] = False
+                    self.is_on_tile = True
+
+            case 'right':
+                if move_the_entire_tile_in_one_tick:
+                    self.pos = (pos[0] + 1 , pos[1])
+                else:
+                    self.pos = (add(pos[0], self.speed_walk), pos[1])
+                if self.pos[0] >= (self.pos_start[0] + 1):
+                    self.pos = (self.pos_start[0] + 1, self.pos_start[1])
+                    self.moves['move_right_to_tile'] = False
+                    self.is_on_tile = True
+
+    def handle_collision(self, direction:str) -> None:
+        match direction:
+
+            case 'down':
+                # Get coordinate of tile below player
+                neighbor = (int(self.pos[0]), floor(self.pos[1]))
+                if neighbor in self.game.tile_map.layout:
+                    # There is a tile there.
+                    if self.tile_is_too_high_to_walk_onto(neighbor):
+                        # Block the player from moving here
+                        self.pos = (self.pos[0], neighbor[1]+1)
+                        # Clear state
+                        self.moves['move_down_to_tile'] = False
+                        self.is_on_tile = True
+
+            case 'up':
+                # Get coordinate of tile above player
+                neighbor = (int(self.pos[0]), ceiling(self.pos[1]))
+                if neighbor in self.game.tile_map.layout:
+                    # There is a tile there.
+                    if self.tile_is_too_high_to_walk_onto(neighbor):
+                        # Block the player from moving here
+                        self.pos = (self.pos[0], neighbor[1]-1)
+                        # Clear state
+                        self.moves['move_up_to_tile'] = False
+                        self.is_on_tile = True
+
+            case 'left':
+                # Get coordinate of tile left of player
+                neighbor = (floor(self.pos[0]), int(self.pos[1]))
+                if neighbor in self.game.tile_map.layout:
+                    # There is a tile there.
+                    if self.tile_is_too_high_to_walk_onto(neighbor):
+                        # Block the player from moving here
+                        self.pos = (neighbor[0]+1, self.pos[1])
+                        # Cleat state
+                        self.moves['move_left_to_tile'] = False
+                        self.is_on_tile = True
+
+            case 'right':
+                # Get coordinate of tile right of player
+                neighbor = (ceiling(self.pos[0]), int(self.pos[1]))
+                if neighbor in self.game.tile_map.layout:
+                    # There is a tile there.
+                    if self.tile_is_too_high_to_walk_onto(neighbor):
+                        # Block the player from moving here
+                        self.pos = (neighbor[0]-1, self.pos[1])
+                        # Cleat state
+                        self.moves['move_right_to_tile'] = False
+                        self.is_on_tile = True
+
+    def tile_is_too_high_to_walk_onto(self, tile:tuple) -> bool:
+        """Return true if tile is too high to walk onto."""
+        tile_height = self.game.voxel_artwork.layout[tile]['height']
+        too_high = (self.z - self.zclimbmax*self.game.grid.scale) > (-1*tile_height*self.game.grid.scale)
+        return too_high
+
+    def stop_all_movement(self) -> None:
+        self.moves = define_moves()
 
     def update_movement_free(self) -> None:
+        # TODO: if I hold 'w' and 's', I break the "end on a tile behavior"... Why?
+        #   Because 'move_down' and 'move_up' are both true.
+        #   Another problem: the start_pos is messed up.
         # Handle free movement
         if self.moves['move_down']:
             if self.is_on_tile:
@@ -351,7 +316,7 @@ class Player:
             if self.moves['move_left'] or self.moves['move_right']:
                 speed *= 0.7
             # Set new position
-            self.pos = (pos[0],                      pos[1] - speed)
+            self.pos = (pos[0], subtract(pos[1], speed))
             # Collision detection
             neighbor_x = int(self.pos[0])
             # Going down? Look 1 tile "below" player
@@ -373,28 +338,23 @@ class Player:
                     # Block the player from moving here
                     self.pos = (pos[0], neighbor_y+1)
             # Check if player is back on the tile grid
-            # LEFTOFF: why doesn't this work? Because I'm not guaranteed pos
-            # hits an integer value. Instead of checking for %1==0, I need to
-            # track the previous value and current value and see when the
-            # remainder passes over 0. Or I simply change the speed to
-            # guarantee that I end up always with remainder 0.
-            if self.game.debug_hud:
-                dy = self.pos_start[1] - self.pos[1]
-                self.game.debug_hud.add_text(f"self.pos_start: {self.pos_start}, "
-                                             f"self.pos: {self.pos}, "
-                                             f"dy%10: {dy%10}")
-            if dy%10 == 0:
+            dy = subtract(self.pos_start[1], self.pos[1])
+            ry = modulo(dy,1)
+            if ry == 0:
                 self.is_on_tile = True
                 self.pos_start = self.pos
 
         if self.moves['move_up']:
-            # GO UP
+            if self.is_on_tile:
+                # Just started moving. Record initial position.
+                self.pos_start = self.pos
+                self.is_on_tile = False
             pos = self.pos
             speed = self.speed_walk
             # Scale walking speed if moving UP+LEFT or UP+RIGHT
             if self.moves['move_left'] or self.moves['move_right']:
                 speed *= 0.7
-            self.pos = (pos[0],                      pos[1] + speed)
+            self.pos = (pos[0], add(pos[1], speed))
             # Collision detection
             neighbor_x = int(self.pos[0])
             # Going up? Look 1 tile "above" player
@@ -417,6 +377,12 @@ class Player:
                 if too_high:
                     # Block the player from moving here
                     self.pos = (pos[0], neighbor_y-1)
+            # Check if player is back on the tile grid
+            dy = subtract(self.pos_start[1], self.pos[1])
+            ry = modulo(dy,1)
+            if ry == 0:
+                self.is_on_tile = True
+                self.pos_start = self.pos
 
         if self.moves['move_left']:
             pos = self.pos
@@ -424,7 +390,7 @@ class Player:
             # Scale walking speed if moving LEFT+UP or LEFT+DOWN
             if self.moves['move_up'] or self.moves['move_down']:
                 speed *= 0.7
-            self.pos = (pos[0] - speed,  pos[1])
+            self.pos = (subtract(pos[0], speed),  pos[1])
             # Collision detection
             neighbor_y = int(self.pos[1])
             if self.pos[0] < 0:
@@ -453,7 +419,7 @@ class Player:
             # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
             if self.moves['move_up'] or self.moves['move_down']:
                 speed *= 0.7
-            self.pos = (pos[0] + speed,  pos[1])
+            self.pos = (add(pos[0], speed),  pos[1])
             # Collision detection
             neighbor_y = int(self.pos[1])
             if self.pos[0] < 0:
@@ -476,9 +442,16 @@ class Player:
                     # Block the player from moving here
                     self.pos = (neighbor_x-1, pos[1])
 
+
     def update_voxel(self) -> None:
         """Figure out which voxel (if any) is below the player."""
-        G = (int(self.pos[0]), int(self.pos[1]))
+        # G = (int(self.pos[0]), int(self.pos[1])) # No, don't just integer truncate
+        # If partway between voxels, use whichever voxel player is closer to
+        G = (round(self.pos[0]), round(self.pos[1]))
+        if self.game.debug_hud:
+            # Debug artifact: player is behind part of a wall
+            self.game.debug_hud.add_text(self.pos)
+            self.game.debug_hud.add_text(G)
         tiles = self.game.tile_map.layout
         voxels = self.game.voxel_artwork.layout
         if G in tiles:
@@ -878,7 +851,9 @@ class VoxelArtwork:
         for G in grid_list:
             if G in voxels:
                 voxel_index += 1
-                if (player.pos[0] >= G[0]) and (player.pos[1] <= G[1]):
+                # if (player.pos[0] >= G[0]) and (player.pos[1] <= G[1]): # NO!
+                # 'round(player.pos[n])' -- THIS FIXES THE ARTIFACT WHERE PLAYER IS HIDDEN BEHIND A VOXEL
+                if (round(player.pos[0]) >= G[0]) and (round(player.pos[1]) <= G[1]):
                     # Player is in front of this voxel; update draw order
                     player_draw_index = voxel_index + 1
                 if (mouse[0] >= G[0]) and (mouse[1] <= G[1]):
@@ -1148,6 +1123,15 @@ class Game:
         # self.update_player_actions()
         self.player.update_actions()
         self.player.update_movement()
+        if self.debug_hud:
+            dy = subtract(self.player.pos_start[1], self.player.pos[1])
+            ry = modulo(dy,1)
+            dx = subtract(self.player.pos_start[0], self.player.pos[0])
+            rx = modulo(dx,1)
+            self.debug_hud.add_text(f"self.player.pos_start: {self.player.pos_start}, "
+                                         f"self.player.pos: {self.player.pos}, "
+                                         f"dx%1: {rx%1}, dy%1: {ry}")
+
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
@@ -1228,7 +1212,7 @@ class Game:
         pygame.display.update()
 
         ### clock.tick(framerate=0) -> milliseconds
-        self.clock.tick(60)
+        self.clock.tick(10)
 
     def add_debug_text(self) -> None:
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
@@ -1243,7 +1227,7 @@ class Game:
         self.debug_hud.add_text(f"mouse_height: {self.mouses['mouse_height']}")
         # Debug discrete motion
         pos_start = self.player.pos_start
-        self.debug_hud.add_text(f"self.player.pos_start: ({pos_start[0]:0.1f},{pos_start[1]:0.1f}), "
+        self.debug_hud.add_text(f"self.player.pos_start: ({pos_start[0]},{pos_start[1]}), "
                                 f"self.player.is_on_tile: {self.player.is_on_tile}")
         # Display transform matrix element values a,b,c,d,e,f
         a,b,c,d = self.grid.scaled()
@@ -1316,8 +1300,7 @@ class Game:
                                 self.handle_mousebuttondown_middleclick()
                             else:
                                 # Place the player
-                                self.player.pos = self.grid.xfm_pg(event.pos)
-                                self.player.z = -1*self.grid.scale*self.mouses['mouse_height']
+                                self.handle_mousebuttondown_leftclick(event)
                         case 2:
                             logger.debug("Middle-click")
                             self.handle_mousebuttondown_middleclick()
@@ -1340,6 +1323,14 @@ class Game:
                 # Log any other events
                 case _:
                     logger.debug(f"Ignored event: {pygame.event.event_name(event.type)}")
+
+    def handle_mousebuttondown_leftclick(self, event) -> None:
+        """Place the player"""
+        self.player.pos = self.grid.xfm_pg(event.pos)
+        self.player.z = -1*self.grid.scale*self.mouses['mouse_height']
+        self.player.stop_all_movement()
+        self.player.pos_start = self.player.pos
+        self.player.is_on_tile = True
 
     def handle_mousebuttondown_middleclick(self) -> None:
         self.grid.pan_ref = pygame.mouse.get_pos()
@@ -1388,8 +1379,18 @@ class Game:
                 # TODO: continue to move player until player is on tile
                 case pygame.K_s: # Move Down
                     self.keys['key_s'] = False
+                    if not self.keys['key_w']: # Avoid bug when player holds down 's' and 'w' and releases 's'
+                        if not self.player.is_on_tile:
+                            # Set "start" position to nearest tile
+                            self.player.pos_start = (self.player.pos[0], round(self.player.pos[1]))
+                            self.player.moves['move_down_to_tile'] = True
                 case pygame.K_w: # Move Up
                     self.keys['key_w'] = False
+                    if not self.keys['key_s']: # Avoid bug when player holds down 'w' and 's' and releases 'w'
+                        if not self.player.is_on_tile:
+                            # Set "start" position to nearest tile
+                            self.player.pos_start = (self.player.pos[0], round(self.player.pos[1]))
+                            self.player.moves['move_up_to_tile'] = True
                 case pygame.K_a: # Move Left
                     self.keys['key_a'] = False
                 case pygame.K_d: # Move Right
@@ -1479,12 +1480,40 @@ class Game:
             # TODO: discrete tile movement continues until player is perfectly on a tile
             case pygame.K_j:
                 self.player.moves['move_down_to_tile'] = True
+                # If already moving up, stop moving up
+                if self.player.moves['move_up_to_tile']:
+                    # Was going up, then pressed 'j' before getting to next tile
+                    self.player.moves['move_up_to_tile'] = False
+                    # Go back to the tile you were on when you started moving up
+                    start = self.player.pos_start
+                    self.player.pos_start = (start[0], start[1]+1)
             case pygame.K_k:
                 self.player.moves['move_up_to_tile'] = True
+                # If already moving down, stop moving down
+                if self.player.moves['move_down_to_tile']:
+                    # Was going down, then pressed 'k' before getting to next tile
+                    self.player.moves['move_down_to_tile'] = False
+                    # Go back to the tile you were on when you started moving down
+                    start = self.player.pos_start
+                    self.player.pos_start = (start[0], start[1]-1)
             case pygame.K_h:
                 self.player.moves['move_left_to_tile'] = True
+                # If already moving right, stop moving right
+                if self.player.moves['move_right_to_tile']:
+                    # Was going right, then pressed 'h' before getting to next tile
+                    self.player.moves['move_right_to_tile'] = False
+                    # Go back to the tile you were on when you started moving right
+                    start = self.player.pos_start
+                    self.player.pos_start = (start[0]+1,start[1])
             case pygame.K_l:
                 self.player.moves['move_right_to_tile'] = True
+                # If already moving left, stop moving left
+                if self.player.moves['move_left_to_tile']:
+                    # Was going left, then pressed 'l' before getting to next tile
+                    self.player.moves['move_left_to_tile'] = False
+                    # Go back to the tile you were on when you started moving left
+                    start = self.player.pos_start
+                    self.player.pos_start = (start[0]-1,start[1])
             # TEMPORARY: Print name of keys that have no unicode representation.
             case pygame.K_RETURN: logger.debug("Return")
             case pygame.K_ESCAPE: logger.debug("Esc")
@@ -1557,28 +1586,28 @@ class Game:
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+J' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0],                      pos[1] - self.player.speed_walk)
+                    self.player.pos = (pos[0], subtract(pos[1], self.player.speed_walk))
                 else:
                     self.keys['key_s'] = True
             case pygame.K_w: # Move Up
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+K' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0],                      pos[1] + self.player.speed_walk)
+                    self.player.pos = (pos[0], add(pos[1], self.player.speed_walk))
                 else:
                     self.keys['key_w'] = True
             case pygame.K_a: # Move Left
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+H' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0] - self.player.speed_walk,  pos[1])
+                    self.player.pos = (subtract(pos[0], self.player.speed_walk),  pos[1])
                 else:
                     self.keys['key_a'] = True
             case pygame.K_d: # Move Right
                 if kmod & pygame.KMOD_SHIFT:
                     # 'Shift+L' nudges player
                     pos = self.player.pos
-                    self.player.pos = (pos[0] + self.player.speed_walk,  pos[1])
+                    self.player.pos = (add(pos[0], self.player.speed_walk),  pos[1])
                 else:
                     self.keys['key_d'] = True
             case _:
