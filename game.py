@@ -24,6 +24,11 @@
 [x] Zoom to fit
 [x] Pan
 [x] Fullscreen
+[ ] Fix artifact: player "behind" voxel
+    Frank and I think this is because player is not on grid.
+    So see what happens after I fix that (player always on grid).
+    Otherwise, round player's y-position up to next whole number. That should fix it.
+[ ] Update self.pos_start anytime position is back on a tile
 [ ] Add controls for moving in discrete steps:
     [x] arrow keys and w,a,s,d become what h,j,k,l are now -- free movement
         [ ] But end free movement on a tile: continue movement until character is on a tile
@@ -223,10 +228,12 @@ class Wall:
 class Player:
     def __init__(self, game):
         self.game = game
-        self.pos = (9.0,2.0)
-        self.height = 10
-        self.speed_walk = 0.2
-        self.speed_rise = 3.0
+        self.height = 10                                # Player height
+        self.pos = (9.0,2.0)                            # Initial position of player
+        self.pos_start = self.pos                       # Track starting position for discrete movement
+        self.is_on_tile = True                          # Track if player is on the tile grid
+        self.speed_walk = 0.2                           # Player walking speed
+        self.speed_rise = 3.0                           # Player levitation speed
         self.wiggle = 0.1                               # Amount to randomize each coordinate value
         self.moving = False                             # Track moving or not moving
         self.moves = define_moves()                     # Dict of player movements
@@ -262,29 +269,82 @@ class Player:
     def update_movement_discrete(self) -> None:
         # Handle discrete movement
         if self.moves['move_down_to_tile']:
+            if self.is_on_tile:
+                # Just started moving. Record initial position.
+                self.pos_start = self.pos
+                self.is_on_tile = False
+            # Record position at start of this delta_t
             pos = self.pos
-            self.pos = (pos[0],pos[1] - 1)
+            move_the_entire_tile_in_one_tick = False
+            if move_the_entire_tile_in_one_tick:
+                self.pos = (pos[0],pos[1] - 1)
+            else:
+                self.pos = (pos[0], pos[1] - self.speed_walk)
             # logger.debug("Move Down")
-            self.moves['move_down_to_tile'] = False
+            if self.pos[1] <= (self.pos_start[1] - 1):
+                # Clamp movement to next tile
+                self.pos = (self.pos_start[0],self.pos_start[1] - 1)
+                # Clear state
+                self.moves['move_down_to_tile'] = False
+                self.is_on_tile = True
         if self.moves['move_up_to_tile']:
+            if self.is_on_tile:
+                # Just started moving. Record initial position.
+                self.pos_start = self.pos
+                self.is_on_tile = False
+            # Record position at start of this delta_t
             pos = self.pos
-            self.pos = (pos[0],pos[1] + 1)
-            # logger.debug("Move Up")
-            self.moves['move_up_to_tile'] = False
+            move_the_entire_tile_in_one_tick = False
+            if move_the_entire_tile_in_one_tick:
+                self.pos = (pos[0], pos[1] + 1)
+            else:
+                self.pos = (pos[0], pos[1] + self.speed_walk)
+            if self.pos[1] >= (self.pos_start[1] + 1):
+                # Clamp movement to next tile
+                self.pos = (self.pos_start[0], self.pos_start[1] + 1)
+                # Clear state
+                self.moves['move_up_to_tile'] = False
+                self.is_on_tile = True
         if self.moves['move_left_to_tile']:
+            if self.is_on_tile:
+                # Just started moving. Record initial position.
+                self.pos_start = self.pos
+                self.is_on_tile = False
+            # Record position at start of this delta_t
             pos = self.pos
-            self.pos = (pos[0] - 1 , pos[1])
-            # logger.debug("Move Left")
-            self.moves['move_left_to_tile'] = False
+            move_the_entire_tile_in_one_tick = False
+            if move_the_entire_tile_in_one_tick:
+                self.pos = (pos[0] - 1 , pos[1])
+            else:
+                self.pos = (pos[0] - self.speed_walk, pos[1])
+            if self.pos[0] <= (self.pos_start[0] - 1):
+                # Clamp movement to next tile
+                self.pos = (self.pos_start[0] - 1, self.pos_start[1])
+                # Clear state
+                self.moves['move_left_to_tile'] = False
+                self.is_on_tile = True
         if self.moves['move_right_to_tile']:
+            if self.is_on_tile:
+                self.pos_start = self.pos
+                self.is_on_tile = False
             pos = self.pos
-            self.pos = (pos[0] + 1 , pos[1])
-            # logger.debug("Move Right")
-            self.moves['move_right_to_tile'] = False
+            move_the_entire_tile_in_one_tick = False
+            if move_the_entire_tile_in_one_tick:
+                self.pos = (pos[0] + 1 , pos[1])
+            else:
+                self.pos = (pos[0] + self.speed_walk, pos[1])
+            if self.pos[0] >= (self.pos_start[0] + 1):
+                self.pos = (self.pos_start[0] + 1, self.pos_start[1])
+                self.moves['move_right_to_tile'] = False
+                self.is_on_tile = True
 
     def update_movement_free(self) -> None:
         # Handle free movement
         if self.moves['move_down']:
+            if self.is_on_tile:
+                # Just started moving. Record initial position.
+                self.pos_start = self.pos
+                self.is_on_tile = False
             pos = self.pos
             speed = self.speed_walk
             # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
@@ -312,6 +372,20 @@ class Player:
                 if too_high:
                     # Block the player from moving here
                     self.pos = (pos[0], neighbor_y+1)
+            # Check if player is back on the tile grid
+            # LEFTOFF: why doesn't this work? Because I'm not guaranteed pos
+            # hits an integer value. Instead of checking for %1==0, I need to
+            # track the previous value and current value and see when the
+            # remainder passes over 0. Or I simply change the speed to
+            # guarantee that I end up always with remainder 0.
+            if self.game.debug_hud:
+                dy = self.pos_start[1] - self.pos[1]
+                self.game.debug_hud.add_text(f"self.pos_start: {self.pos_start}, "
+                                             f"self.pos: {self.pos}, "
+                                             f"dy%10: {dy%10}")
+            if dy%10 == 0:
+                self.is_on_tile = True
+                self.pos_start = self.pos
 
         if self.moves['move_up']:
             # GO UP
@@ -1055,8 +1129,10 @@ class Game:
         # Create the debug HUD
         if self.settings['setting_debug']:
             self.debug_hud = DebugHud(self)
+            self.add_debug_text()
         else:
             self.debug_hud = None
+
 
         # Update things affected by gravity
         self.update_gravity_effects()
@@ -1072,7 +1148,6 @@ class Game:
         # self.update_player_actions()
         self.player.update_actions()
         self.player.update_movement()
-        # self.update_player_movement()
 
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
@@ -1091,35 +1166,16 @@ class Game:
 
         # TODO: draw floor tiles
 
-        # Display mouse coordinates in game grid coordinate system
-        mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
-        mpos_g = self.grid.xfm_pg(mpos_p)
-        if self.debug_hud:
-            self.debug_hud.add_text(f"Mouse (grid): {mpos_g}")
-
         # Draw the layout of voxels and player
         self.voxel_artwork.render(self.surfs['surf_game_art'])
 
         # Figure out which voxel is below the player
         self.player.update_voxel()
-        if self.debug_hud:
-            self.debug_hud.add_text(f"self.player.voxel: {self.player.voxel}")
 
         # self.render_mouse_location_as_white_circle()
         # Use the power of xfm_gp()
         # self.render_grid_tile_highlighted_at_mouse()
         self.update_mouse_height()
-        if self.debug_hud:
-            self.debug_hud.add_text(f"mouse_height: {self.mouses['mouse_height']}")
-
-        if self.debug_hud:
-            self.debug_hud.add_text(f"Voxel %: {int(100*self.voxel_artwork.percentage)}%")
-
-        # Display transform matrix element values a,b,c,d,e,f
-        if self.debug_hud:
-            a,b,c,d = self.grid.scaled()
-            e,f = (self.grid.e, self.grid.f)
-            self.debug_hud.add_text(f"a: {a:0.1f} | b: {b:0.1f} | c: {c:0.1f} | d: {d:0.1f} | e: {e:0.1f} | f: {f:0.1f}")
 
         ### TEMPORARY: spell casting
         # Display typing text while casting
@@ -1134,11 +1190,6 @@ class Game:
         ### blit(source, dest, area=None, special_flags=0) -> Rect
         self.surfs['surf_os_window'].blit(self.surfs['surf_game_art'], (0,0))
 
-        ### TEMPORARY: spell casting
-        # DEBUG: What spell is cast?
-        if self.debug_hud:
-            if self.player.spell != "":
-                self.debug_hud.add_text(f"Cast: {self.player.spell}")
 
         # Display Debug HUD overlay
         if self.debug_hud:
@@ -1179,6 +1230,30 @@ class Game:
         ### clock.tick(framerate=0) -> milliseconds
         self.clock.tick(60)
 
+    def add_debug_text(self) -> None:
+        mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
+        mpos_g = self.grid.xfm_pg(mpos_p)
+        # Display mouse coordinates in game grid coordinate system
+        self.debug_hud.add_text(f"Mouse (grid): {mpos_g}")
+        # Display percentage each voxel is filled
+        self.debug_hud.add_text(f"Voxel %: {int(100*self.voxel_artwork.percentage)}%")
+        # Which voxel is below the player
+        self.debug_hud.add_text(f"self.player.voxel: {self.player.voxel}")
+        # Get height at mouse in game coordinates
+        self.debug_hud.add_text(f"mouse_height: {self.mouses['mouse_height']}")
+        # Debug discrete motion
+        pos_start = self.player.pos_start
+        self.debug_hud.add_text(f"self.player.pos_start: ({pos_start[0]:0.1f},{pos_start[1]:0.1f}), "
+                                f"self.player.is_on_tile: {self.player.is_on_tile}")
+        # Display transform matrix element values a,b,c,d,e,f
+        a,b,c,d = self.grid.scaled()
+        e,f = (self.grid.e, self.grid.f)
+        self.debug_hud.add_text(f"a: {a:0.1f} | b: {b:0.1f} | c: {c:0.1f} | d: {d:0.1f} | e: {e:0.1f} | f: {f:0.1f}")
+        ### TEMPORARY: spell casting
+        # DEBUG: What spell is cast?
+        if self.player.spell != "":
+            self.debug_hud.add_text(f"Cast: {self.player.spell}")
+
     def update_gravity_effects(self) -> None:
         # Account for gravity
         self.player.dz = min(self.max_fall_speed, self.player.dz+self.gravity) # acceleration updates velocity
@@ -1187,8 +1262,11 @@ class Game:
         # Stop falling if player is standing on something
         floor_height = 0
         if self.player.voxel != None:
+            floor_height_g = self.player.voxel['height']
             floor_height = -1*self.player.voxel['height']*self.grid.scale
-            if self.debug_hud: self.debug_hud.add_text(f"floor_height: {floor_height}")
+            if self.debug_hud:
+                self.debug_hud.add_text(f"floor_height: {floor_height_g} [game]")
+                self.debug_hud.add_text(f"floor_height: {floor_height} [pixels]")
         if self.player.z > floor_height:
             # z > 0 means player is BELOW the floor
             self.player.z = floor_height                # reset position
@@ -1307,6 +1385,7 @@ class Game:
                     self.keys['key_F'] = False
                     self.keys['key_f'] = False
                 # Free player movement
+                # TODO: continue to move player until player is on tile
                 case pygame.K_s: # Move Down
                     self.keys['key_s'] = False
                 case pygame.K_w: # Move Up
@@ -1549,140 +1628,6 @@ class Game:
         self.player.moves['move_up']    = self.keys['key_w']
         self.player.moves['move_left']  = self.keys['key_a']
         self.player.moves['move_right'] = self.keys['key_d']
-
-    # TODO: move to Player
-    def update_player_movement(self) -> None:
-        # DEBUG moves
-        if self.debug_hud:
-            self.debug_hud.add_text(f"self.moves: {self.moves}")
-
-        if self.moves['move_down'] or self.moves['move_up'] or self.moves['move_left'] or self.moves['move_right']:
-            self.player.moving = True
-        else:
-            self.player.moving = False
-        if self.moves['move_down_to_tile']:
-            pos = self.player.pos
-            self.player.pos = (pos[0],pos[1] - 1)
-            # logger.debug("Move Down")
-            self.moves['move_down_to_tile'] = False
-        if self.moves['move_down']:
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving DOWN+LEFT or DOWN+RIGHT
-            if self.moves['move_left'] or self.moves['move_right']:
-                speed *= 0.7
-            # Set new position
-            self.player.pos = (pos[0],                      pos[1] - speed)
-            # Collision detection
-            neighbor_x = int(self.player.pos[0])
-            # Going down? Look 1 tile "below" player
-            # To look "below", comparison depends on whether player y is + or -
-            if self.player.pos[1] < 0:
-                # Example: player_y = -10.8, 1 tile below y=-11
-                neighbor_y = int(self.player.pos[1]) - 1
-            else:
-                # Example: player_y = +10.8, 1 tile below y=+10
-                neighbor_y = int(self.player.pos[1])
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (pos[0], neighbor_y+1)
-
-        if self.moves['move_up']:
-            # GO UP
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving UP+LEFT or UP+RIGHT
-            if self.moves['move_left'] or self.moves['move_right']:
-                speed *= 0.7
-            self.player.pos = (pos[0],                      pos[1] + speed)
-            # Collision detection
-            neighbor_x = int(self.player.pos[0])
-            # Going up? Look 1 tile "above" player
-            if self.player.pos[1] < 0:
-                # Example: player_y = -10.8, 1 tile above y=-10
-                neighbor_y = int(self.player.pos[1])
-            else:
-                # Example: player_y = +10.8, 1 tile above y=+11
-                neighbor_y = int(self.player.pos[1]) + 1
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (pos[0], neighbor_y-1)
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (pos[0], neighbor_y-1)
-
-        if self.moves['move_left']:
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving LEFT+UP or LEFT+DOWN
-            if self.moves['move_up'] or self.moves['move_down']:
-                speed *= 0.7
-            self.player.pos = (pos[0] - speed,  pos[1])
-            # Collision detection
-            neighbor_y = int(self.player.pos[1])
-            if self.player.pos[0] < 0:
-                # Example: Player_x = -10.8, 1 tile left x=-11
-                neighbor_x = int(self.player.pos[0] - 1)
-            else:
-                # Example player_x = +10.8, 1 tile left x=+10
-                neighbor_x = int(self.player.pos[0])
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (neighbor_x+1, pos[1])
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (neighbor_x+1, pos[1])
-
-        if self.moves['move_right']:
-            pos = self.player.pos
-            speed = self.player.speed_walk
-            # Scale walking speed if moving RIGHT+UP or RIGHT+DOWN
-            if self.moves['move_up'] or self.moves['move_down']:
-                speed *= 0.7
-            self.player.pos = (pos[0] + speed,  pos[1])
-            # Collision detection
-            neighbor_y = int(self.player.pos[1])
-            if self.player.pos[0] < 0:
-                # Example: Player_x = -10.8, 1 tile right x=-10
-                neighbor_x = int(self.player.pos[0])
-            else:
-                # Example player_x = +10.8, 1 tile right x=+11
-                neighbor_x = int(self.player.pos[0] + 1)
-            # for wall in self.tile_map.walls:
-            #     if (neighbor_x,neighbor_y) in wall.points:
-            #         self.player.pos = (neighbor_x-1, pos[1])
-            if (neighbor_x,neighbor_y) in self.tile_map.layout:
-                # There is a tile there.
-                # Now check if the top of this tile is too high for the player to get onto
-                G = (neighbor_x, neighbor_y)
-                tile_height = self.voxel_artwork.layout[G]['height']
-                too_high = (self.player.z  - self.player.zclimbmax*self.grid.scale) > -1*tile_height*self.grid.scale
-                # TODO: make "too_high" a little higher than same height
-                if too_high:
-                    # Block the player from moving here
-                    self.player.pos = (neighbor_x-1, pos[1])
-
 
     def update_mouse_height(self) -> None:
         """Mouse height is the top of the voxel where the mouse is hovering."""
