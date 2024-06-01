@@ -190,3 +190,181 @@ class DebugHud:
         self.text.update(f"FPS: {self.game.clock.get_fps():0.1f} | Mouse: {mpos}"
                          f"{self.debug_text}")
         self.text.render(self.game.surfs['surf_os_window'], color)
+
+def define_surfaces(os_window:OsWindow) -> dict:
+    """Return dictionary of pygame Surfaces.
+
+    :param os_window:OsWindow -- defines OS Window 'size' and 'flags'
+    :return dict -- {'surf_name': pygame.Surface, ...}
+    """
+    surfs = {}                                      # Dict of Pygame Surfaces
+
+    # The first surface is the OS Window. Initialize the window for display.
+    ### set_mode(size=(0, 0), flags=0, depth=0, display=0, vsync=0) -> Surface
+    surfs['surf_os_window'] = pygame.display.set_mode(os_window.size, os_window.flags)
+
+    # Blend artwork on the game art surface.
+    # This is the final surface that is  copied to the OS Window.
+    surfs['surf_game_art'] = pygame.Surface(os_window.size, flags=pygame.SRCALPHA)
+
+    # Temporary drawing surface -- draw on this, blit the drawn portion, then clear this.
+    surfs['surf_draw'] = pygame.Surface(surfs['surf_game_art'].get_size(), flags=pygame.SRCALPHA)
+
+    # This surface is populated later when Game instantiates RomanizedChars
+    surfs['surf_romanized_chars'] = None
+
+    return surfs
+
+def define_actions() -> dict:
+    actions = {}
+    actions['action_levitate'] = False
+    return actions
+
+def define_moves() -> dict:
+    moves = {}
+    # Free movement
+    moves['move_down']  = False
+    moves['move_up']    = False
+    moves['move_right'] = False
+    moves['move_left']  = False
+    # Discrete movement
+    moves['move_down_to_tile']  = False
+    moves['move_up_to_tile']    = False
+    moves['move_right_to_tile'] = False
+    moves['move_left_to_tile']  = False
+    return moves
+
+def define_held_keys() -> dict:
+    """Return a dict to track which keys are held down.
+
+    These are the keys, and their Shifted versions, that continue to have
+    effect while held.
+
+    (As opposed to a key triggering only a single-shot when pressed.)
+    """
+    keys = {}
+    # Special
+    keys['key_Space'] = False
+    keys['key_Shift_Space'] = False
+    # Xfm matrix
+    keys['key_A'] = False
+    # keys['key_a'] = False # Repurposed
+    keys['key_B'] = False
+    keys['key_b'] = False
+    keys['key_C'] = False
+    keys['key_c'] = False
+    keys['key_D'] = False
+    # keys['key_d'] = False # Repurposed
+    keys['key_E'] = False
+    keys['key_e'] = False
+    keys['key_F'] = False
+    keys['key_f'] = False
+    # Discrete Movement
+    keys['key_j'] = False
+    keys['key_k'] = False
+    keys['key_h'] = False
+    keys['key_l'] = False
+    # Free Movement
+    keys['key_s'] = False
+    keys['key_w'] = False
+    keys['key_a'] = False
+    keys['key_d'] = False
+    return keys
+
+def define_colors() -> dict:
+    colors = {}
+    colors['color_clear'] = Color(0,0,0,0)
+    colors['color_debug_hud'] = Color(255,255,255,255)
+    colors['color_help_hud'] = Color(200,150,100,255)
+    # colors['color_debug_keystrokes'] = Color(80,130,80)
+    colors['color_debug_keystrokes'] = Color(200,200,200)
+    colors['color_game_art_bgnd'] = Color(40,40,40,255)
+    colors['color_grid_lines'] =     Color(100,100,250,255)
+    colors['color_vertical_lines'] = Color(150,150,250,255)
+    colors['color_voxel_top'] =      Color(150,150,250,255)
+    colors['color_voxel_left'] =      Color(80,80,250,255)
+    colors['color_voxel_right'] =     Color(120,120,250,255)
+    colors['color_grid_x_axis'] = Color(100,150,200,255)
+    colors['color_grid_y_axis'] = Color(200,100,200,255)
+    colors['color_floor_solid'] = Color(70,40,130)
+    floor = colors['color_floor_solid']
+    colors['color_floor_shadow'] = Color(floor.r-20, floor.g-20, floor.b-40)
+    colors['color_floor_shadow_light'] = Color(floor.r-5, floor.g-5, floor.b-10)
+    return colors
+
+def define_settings() -> dict:
+    settings = {}
+    settings['setting_show_help'] = True
+    settings['setting_debug'] = False
+    return settings
+
+def floor(x:float) -> int:
+    """Return x rounded down to an int.
+    
+    Rounding down depends on whether x is + or -.
+    >>> floor(-10.8)
+    -11
+    >>> floor(10.8)
+    10
+    """
+    if x < 0: return int(x) - 1
+    else: return int(x)
+
+def ceiling(x:float) -> int:
+    """Return x rounded up to an int.
+    
+    Rounding up depends on whether x is + or -.
+    >>> ceiling(-10.8)
+    -10
+    >>> ceiling(10.8)
+    11
+    """
+    if x < 0: return int(x)
+    else: return int(x) + 1
+
+def add(a,b,p:int=3) -> float:
+    """Avoid float issues: Add a+b with precision p.
+
+    Consider these examples:
+    >>> 1+0.2
+    1.2
+    >>> 1+0.2+0.2
+    1.4
+    >>> 1+0.2+0.2+0.2
+    1.5999999999999999
+
+    Now fix them:
+    >>> add(1,0.2)
+    1.2
+    >>> add(add(1,0.2),0.2)
+    1.4
+    >>> add(add(add(1,0.2),0.2),0.2)
+    1.6
+    """
+    return round(a + b,p)
+
+def subtract(a,b,p:int=3) -> float:
+    """Avoid float issues: Subtract a-b with precision p.
+
+    Consider these examples:
+    >>> 1-0.2
+    0.8
+    >>> 1-0.2-0.2
+    0.6000000000000001
+    >>> 1-0.2-0.2-0.2
+    0.4000000000000001
+
+    Now fix them:
+    >>> subtract(1,0.2)
+    0.8
+    >>> subtract(subtract(1,0.2),0.2)
+    0.6
+    >>> subtract(subtract(subtract(1,0.2),0.2),0.2)
+    0.4
+    """
+    return round(a - b,p)
+
+def modulo(a,b,p:int=3) -> float:
+    """Avoid float issues: Remainder of a/b with precision p. """
+    return round(a%b,p)
+
