@@ -295,7 +295,7 @@ def define_colors() -> dict:
 def define_settings() -> dict:
     settings = {}
     settings['setting_show_help'] = True
-    settings['setting_debug'] = False
+    settings['setting_debug'] = True
     return settings
 
 def floor(x:float) -> int:

@@ -338,7 +338,8 @@ class Player:
     def tile_is_too_high_to_walk_onto(self, tile:tuple) -> bool:
         """Return true if tile is too high to walk onto."""
         tile_height = self.game.voxel_artwork.layout[tile]['height']
-        too_high = (self.z - self.zclimbmax*self.game.grid.scale) > (-1*tile_height*self.game.grid.scale)
+        tile_z = self.game.voxel_artwork.layout[tile]['z']
+        too_high = (self.z - self.zclimbmax*self.game.grid.scale) > (-1*(tile_z + tile_height)*self.game.grid.scale)
         return too_high
 
     def stop_all_movement(self) -> None:
@@ -533,7 +534,9 @@ class Player:
         # Check actual z-value of what is below player and set 'floor_height' to that
         floor_height = 0
         if self.voxel != None:
-            floor_height = -1*self.voxel['height']*self.game.grid.scale
+            tile_height = self.voxel['height']
+            tile_z = self.voxel['z']
+            floor_height = -1*(tile_z + tile_height)*self.game.grid.scale
         ### Grow light shadow proportional to height above floor_height
         k = 0.005*(floor_height - self.z)
         shadow_light_points_g = [
@@ -1176,7 +1179,7 @@ class Game:
         self.max_fall_speed = 15.0
         self.player = Player(self)
         self.romanized_chars = RomanizedChars(self)
-        self.mouses = {}
+        self.mouses = {'mouse_height': 0, 'mouse_z':0}
 
         # FPS
         self.clock = pygame.time.Clock()
@@ -1335,7 +1338,9 @@ class Game:
         floor_height = 0
         if self.player.voxel != None:
             floor_height_g = self.player.voxel['height']
-            floor_height = -1*self.player.voxel['height']*self.grid.scale
+            tile_height = self.player.voxel['height']
+            tile_z = self.player.voxel['z']
+            floor_height = -1*(tile_z + tile_height)*self.grid.scale
             if self.debug_hud:
                 self.debug_hud.add_text(f"floor_height: {floor_height_g} [game]")
                 self.debug_hud.add_text(f"floor_height: {floor_height} [pixels]")
