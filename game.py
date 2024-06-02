@@ -678,9 +678,11 @@ class TileMap:
 
         elif 1:
             ### Make floor tiles
-            layout[(0,0)] = {'z':0,'height':10, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
-            layout[(0,-1)] = {'z':0,'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
-            layout[(0,-2)] = {'z':-5,'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,0)] = {'z':3,'height':6, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,-1)] = {'z':0,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,-2)] = {'z':-3,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,-3)] = {'z':-6,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,-4)] = {'z':-9,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
         else:
             ### Make walls
             # Outer walls
@@ -882,7 +884,8 @@ class VoxelArtwork:
         """Render voxels, player, and mouse."""
         voxels = self.adjust_voxel_size()
         player = self.game.player
-        player.is_rendered = False
+        player_is_rendered = False
+        mouse_is_rendered = False
         # Why do I track if the player is rendered yet?
         #   Say there are NO VOXELS on the grid until about the middle of the grid.
         #   Then 'voxel_index' will be 0 for a long time while I iterate over the list of grid points.
@@ -971,40 +974,49 @@ class VoxelArtwork:
                 # Check if mouse is at this voxel
                 if G == mouse:
                     # Draw mouse location highlighting the top of the voxel
-                    points_zh = [(P[0], P[1] - (z + height)*self.game.grid.scale) for P in Ps]
-                    # Draw a yellow highlight above the voxel
-                    pygame.draw.polygon(surf, Color(200,200,100), points_zh)
+                    pygame.draw.polygon(surf, Color(200,200,100), voxel_Ts)
+                    points_z = [(P[0], P[1] - z*self.game.grid.scale) for P in _Ps]
+                    # Draw a yellow highlight on the top and bottom faces of the voxel
+                    pygame.draw.polygon(surf, Color(200,200,100), points_z, width=3)
                 # Increment voxel index at the end of the loop (not the beginning)!
                 #   THIS FIXES YET ANOTHER ARTIFACT WHERE PLAYER IS BEHIND A VOXEL
                 voxel_index += 1
             # TODO: do not draw green highlight if drawing a yellow highlight
             # Check draw order for mouse
             if voxel_index == mouse_draw_index:
-                # Draw the mouse green highlight on the grid
-                self.game.render_grid_tile_highlighted_at_mouse()
+                if not mouse_is_rendered:
+                    # Draw the mouse green highlight on the grid
+                    self.game.render_grid_tile_highlighted_at_mouse()
+                    mouse_is_rendered = True
             # Check draw order for player
             if voxel_index == player_draw_index:
-                if not player.is_rendered:
+                if not player_is_rendered:
                     # Draw player
                     player.render(surf)
-                    player.is_rendered = True
+                    player_is_rendered = True
+            # Draw front part of mouse green highlight in front of player if they are at the same index
+            if (mouse[0] >= round(player.pos[0])) and (mouse[1] <= round(player.pos[1])):
+                self.game.render_grid_tile_highlighted_at_mouse_around_player()
         # DEBUG
         ### DebugHud.add_text(debug_text:str)
         if self.game.debug_hud:
             self.game.debug_hud.add_text(f"player_draw_index: {player_draw_index}")
+            self.game.debug_hud.add_text(f"mouse_draw_index: {mouse_draw_index}")
             self.game.debug_hud.add_text(f"len(voxels): {len(voxels)}")
             self.game.debug_hud.add_text(
                     f"player.pos: ({player.pos[0]:.1f},{player.pos[1]:.1f},z={player.z:.1f})")
 
         # If mouse is in front of all voxels, player has not been drawn yet!
         if mouse_draw_index >= len(voxels):
-            self.game.render_grid_tile_highlighted_at_mouse()
+            if not mouse_is_rendered:
+                self.game.render_grid_tile_highlighted_at_mouse()
+                mouse_is_rendered = True
         # If player is in front of all voxels, player has not been drawn yet!
         if player_draw_index >= len(voxels):
-            if not player.is_rendered:
+            if not player_is_rendered:
                 # Draw the player now
                 player.render(surf)
-                player.is_rendered = True
+                player_is_rendered = True
 
     def old_render(self, surf) -> None:
         """Render voxels and player.
@@ -1858,7 +1870,17 @@ class Game:
                 (G[0]+1,G[1]+1),
                 (G[0]  ,G[1]+1)]
         points = [self.grid.xfm_gp(G) for G in Gs]
-        pygame.draw.polygon(self.surfs['surf_game_art'], Color(100,255,100), points)
+        pygame.draw.polygon(self.surfs['surf_game_art'], Color(100,255,100), points, width=5)
+
+    def render_grid_tile_highlighted_at_mouse_around_player(self) -> None:
+        """Render just the front of the highlight around the player when mouse is on player's tile."""
+        G = self.grid.xfm_pg(pygame.mouse.get_pos())
+        Gs = [ # Define only the front part of the square tile on the grid
+                (G[0]  ,G[1]  ),
+                (G[0]+1,G[1]  ),
+                (G[0]+1,G[1]+1)]
+        points = [self.grid.xfm_gp(G) for G in Gs]
+        pygame.draw.lines(self.surfs['surf_game_art'], Color(100,255,100), False, points, width=5)
 
     def render_vertical_line_on_grid(self, start:tuple, height:int=10) -> None:
         P = self.grid.xfm_gp(start)
