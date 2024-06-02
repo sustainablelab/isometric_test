@@ -277,16 +277,19 @@ def define_colors() -> dict:
     colors['color_debug_hud'] = Color(255,255,255,255)
     colors['color_help_hud'] = Color(200,150,100,255)
     # colors['color_debug_keystrokes'] = Color(80,130,80)
-    colors['color_debug_keystrokes'] = Color(200,200,200)
-    colors['color_game_art_bgnd'] = Color(40,40,40,255)
-    colors['color_grid_lines'] =     Color(100,100,250,255)
-    colors['color_vertical_lines'] = Color(150,150,250,255)
-    colors['color_voxel_top'] =      Color(150,150,250,255)
-    colors['color_voxel_left'] =      Color(80,80,250,255)
-    colors['color_voxel_right'] =     Color(120,120,250,255)
-    colors['color_grid_x_axis'] = Color(100,150,200,255)
-    colors['color_grid_y_axis'] = Color(200,100,200,255)
-    colors['color_floor_solid'] = Color(70,40,130,200)
+    colors['color_debug_keystrokes']  = Color(200,200,200)
+    colors['color_game_art_bgnd']     = Color(40,40,40,255)
+    colors['color_grid_lines']        = Color(100,100,250,255)
+    colors['color_vertical_lines']    = Color(150,150,250,255)
+    colors['color_voxel_top']         = Color(150,150,250,255)
+    colors['color_voxel_left']        = Color(80,80,250,255)
+    colors['color_voxel_right']       = Color(120,120,250,255)
+    colors['color_voxel_top_floor']   = Color(120,120,230,255)
+    colors['color_voxel_left_floor']  = Color(100,100,230,255)
+    colors['color_voxel_right_floor'] = Color(110,110,230,255)
+    colors['color_grid_x_axis']       = Color(100,150,200,255)
+    colors['color_grid_y_axis']       = Color(200,100,200,255)
+    colors['color_floor_solid']       = Color(70,40,130,200)
     floor = colors['color_floor_solid']
     colors['color_floor_shadow'] = Color(floor.r-20, floor.g-20, floor.b-40)
     colors['color_floor_shadow_light'] = Color(floor.r-5, floor.g-5, floor.b-10)
@@ -295,7 +298,7 @@ def define_colors() -> dict:
 def define_settings() -> dict:
     settings = {}
     settings['setting_show_help'] = True
-    settings['setting_debug'] = True
+    settings['setting_debug'] = False
     return settings
 
 def floor(x:float) -> int:

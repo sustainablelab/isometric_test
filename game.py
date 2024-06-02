@@ -53,6 +53,7 @@
     * The fix: check if the player has been rendered yet. Only render the player once.
 LEFT OFF HERE
 [ ] * Add a 'z' value to tiles in tile_map.layout and voxels made from the tile_map
+[ ] Fix player's shadow now that there is no default floor at z=0
 [ ] Fix free movement and discrete movement for moving in two directions at the same time.
     * Discrete diagonal movement does this weird teleport bug
     * Free diagonal movement is lots of those weird teleport bugs
@@ -676,7 +677,7 @@ class TileMap:
                 step_height += 3
                 layout[(0,i)] = {'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
 
-        elif 1:
+        elif 0:
             ### Make floor tiles
             layout[(0,0)] = {'z':3,'height':6, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
             layout[(0,-1)] = {'z':0,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
@@ -687,35 +688,54 @@ class TileMap:
             ### Make walls
             # Outer walls
             for i in range(a,b):
-                layout[(i,  a)]   = {'height':25, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Front left wall
-                layout[(i,  b-1)] = {'height':65, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Back right wall
-                layout[(a,  i)]   = {'height':65, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Back left wall
-                layout[(b-1,i)]   = {'height':25, 'style':"style_skeleton_frame", 'rand_amt':5} # Front right wall
+                layout[(i,  a)]   = {'z':0, 'percentage':1, 'height':25, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Front left wall
+                layout[(i,  b-1)] = {'z':0, 'percentage':1, 'height':65, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Back right wall
+                layout[(a,  i)]   = {'z':0, 'percentage':1, 'height':65, 'style':"style_shade_faces_solid_color", 'rand_amt':5} # Back left wall
+                layout[(b-1,i)]   = {'z':0, 'percentage':1, 'height':25, 'style':"style_skeleton_frame", 'rand_amt':5} # Front right wall
             # Inner walls: walls at constant x from y=a to y=b and constant y from x=a to x=b
             x = -10; a = -10; b = 20
             for i in range(a,b):
-                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
+                layout[(x,i)] = {'z':0, 'percentage':1, 'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
             y = 20; a = -10; b = 20
             for i in range(a,b):
-                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
+                layout[(i,y)] = {'z':0, 'percentage':1, 'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
             x = -5; a = -10; b = 15
             for i in range(a,b):
-                layout[(x,i)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
+                layout[(x,i)] = {'z':0, 'percentage':1, 'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
             y = 15; a = -5; b = 20
             for i in range(a,b):
-                layout[(i,y)] = {'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
+                layout[(i,y)] = {'z':0, 'percentage':1, 'height':5, 'style':"style_shade_faces_solid_color", 'rand_amt':5}
             ### Make stairs
             # Make right-hand staircase up to back corner
             step_height = 0
             start = 4
             for i in range(-1*start, self.a, -1):
                 step_height += 3
-                layout[(i,self.b-2)] = {'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+                layout[(i,self.b-2)] = {'z':0, 'percentage':1, 'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
             # Make left-hand staircase up to back corner
             step_height = 0
             for i in range(start-1, self.b-2):
                 step_height += 3
-                layout[(self.a+1,i)] = {'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+                layout[(self.a+1,i)] = {'z':0, 'percentage':1, 'height':step_height, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            # Fill the rest of the layout with floor tiles
+            grid_list = [] # Walk grid coordinates
+            a = self.a; b = self.b
+            for j in range(b,a-1,-1): # See VoxelArtwork.render()
+                for i in range(a,b):
+                    G = (i,j)
+                    grid_list.append(G)
+            ### [(-25,  25), (-24,  25), ... (0,  25), ... (24,  25),
+            ###  (-25,  24), (-24,  24), ... (0,  24), ... (24,  24),
+            ###  ...
+            ###  (-25, -25), (-24, -25), ... (0, -25), ... (24, -25)]
+            for G in grid_list:
+                if G in layout:
+                    pass # Don't need a floor tile here yet because I am doing just one voxel per tile for now
+                else:
+                    # No voxel here yet: put a floor tile here
+                    # TODO: find a way to randomize the tiles a little, but not too much.
+                    # rand_amt:1 is imperceptible and rand_amt:2 is too much.
+                    layout[G] = {'z':-2, 'percentage':0.95, 'height':2, 'style':"style_floor_tiles", 'rand_amt':1}
 
         self.layout = layout
 
@@ -784,7 +804,7 @@ class VoxelArtwork:
                            (G[0]+1,G[1]  ),
                            (G[0]+1,G[1]+1),
                            (G[0]  ,G[1]+1)]
-            voxel_artwork[G] = {'z':wall['z'], 'grid_points':grid_points, 'height':height, 'style':wall['style']}
+            voxel_artwork[G] = {'z':wall['z'], 'percentage':wall['percentage'], 'grid_points':grid_points, 'height':height, 'style':wall['style']}
             # See "adjust_voxel_size" and "Draw voxels!"
         return voxel_artwork
 
@@ -839,22 +859,25 @@ class VoxelArtwork:
         """Scale size of each voxel by some percentage."""
         adjusted_voxel_artwork = {}
         # Calculate how much to shrink voxels
-        p = 1-self.percentage
-        d = p/2
+        # p = 1-self.percentage
+        # d = p/2
         # Convert each voxel to pixel coordinates and render
         # TODO: rename self.layout to self.voxel_dict or something more descriptive
         for G in self.layout:
             Gs = self.layout[G]['grid_points']
+            # Copy height and style
+            z = self.layout[G]['z']
+            height = self.layout[G]['height']
+            style = self.layout[G]['style']
+            p = 1 - self.layout[G]['percentage']
+            # p = 1 - self.percentage
+            d = p/2
             adjusted_grid_points = [
                     (Gs[0][0] + d, Gs[0][1] + d),
                     (Gs[1][0] - d, Gs[1][1] + d),
                     (Gs[2][0] - d, Gs[2][1] - d),
                     (Gs[3][0] + d, Gs[3][1] - d)
                     ]
-            # Copy height and style
-            z = self.layout[G]['z']
-            height = self.layout[G]['height']
-            style = self.layout[G]['style']
             # Apply self.percentage and keep the voxel centered on the tile
             adjusted_voxel_artwork[G] = {'z':z, 'grid_points':adjusted_grid_points,'height':height,'style':style}
         return adjusted_voxel_artwork
@@ -958,6 +981,10 @@ class VoxelArtwork:
                 voxel_Rs = [Ps[1], Ps[2], voxel_Ts[2], voxel_Ts[1]]
                 style = voxels[G]['style']
                 match style:
+                    case "style_floor_tiles":
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_top_floor'], voxel_Ts)
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_left_floor'], voxel_Ls)
+                        pygame.draw.polygon(surf, self.game.colors['color_voxel_right_floor'], voxel_Rs)
                     case "style_shade_faces_solid_color":
                         # Render the three visible quads
                         ### polygon(surface, color, points) -> Rect
@@ -1235,14 +1262,12 @@ class Game:
         ### fill(color, rect=None, special_flags=0) -> Rect
         self.surfs['surf_game_art'].fill(self.colors['color_game_art_bgnd'])
 
+        # Draw the layout of voxels and player
+        self.voxel_artwork.render(self.surfs['surf_game_art'])
+
         # Draw grid
         if self.settings['setting_debug']:
             self.grid.draw(self.surfs['surf_game_art'])
-
-        # TODO: draw floor tiles
-
-        # Draw the layout of voxels and player
-        self.voxel_artwork.render(self.surfs['surf_game_art'])
 
         # Figure out which voxel is below the player
         self.player.update_voxel()
@@ -1347,12 +1372,12 @@ class Game:
         self.player.z += self.player.dz                 # velocity updates position
 
         # Stop falling if player is standing on something
-        floor_height = 0
+        floor_height = 1000*self.grid.scale # Earth ground
         if self.player.voxel != None:
-            floor_height_g = self.player.voxel['height']
             tile_height = self.player.voxel['height']
             tile_z = self.player.voxel['z']
-            floor_height = -1*(tile_z + tile_height)*self.grid.scale
+            floor_height_g = tile_z + tile_height
+            floor_height = -1*floor_height_g*self.grid.scale
             if self.debug_hud:
                 self.debug_hud.add_text(f"floor_height: {floor_height_g} [game]")
                 self.debug_hud.add_text(f"floor_height: {floor_height} [pixels]")
