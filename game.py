@@ -990,7 +990,9 @@ class VoxelArtwork:
                         ### polygon(surface, color, points) -> Rect
                         pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
                         pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
+                        pygame.draw.line(surf, self.game.colors['color_voxel_left_shadow'], voxel_Ls[0], voxel_Ls[1],width=3)
                         pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
+                        pygame.draw.line(surf, self.game.colors['color_voxel_right_shadow'], voxel_Rs[0], voxel_Rs[1],width=3)
                     case "style_skeleton_frame":
                         ### polygon(surface, color, points, width=0) -> Rect
                         pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts, width=1)
