@@ -125,7 +125,7 @@ class OsWindow:
 
     def handle_WINDOWRESIZED(self, event) -> None:
         """Track size of OS window in self.size"""
-        self.size = (event.x, event.y)
+        self._size = (event.x, event.y)
         logger.debug(f"Window resized, self.size: {self.size}")
 
 class Text:
@@ -173,7 +173,7 @@ class DebugHud:
         self.game = game
         self.debug_text = ""
         # self.text = Text((0,0), font_size=36, sys_font="Built-in Pygame Font")
-        self.text = Text((0,0), font_size=15, sys_font="Roboto Mono")
+        self.text = Text((0,0), font_size=20, sys_font="Roboto Mono")
 
     def add_text(self, debug_text:str):
         """Add another line of debug text.
@@ -301,6 +301,7 @@ def define_settings() -> dict:
     settings = {}
     settings['setting_show_help'] = True
     settings['setting_debug'] = False
+    settings['setting_render_floor_tiles'] = True
     return settings
 
 def floor(x:float) -> int:

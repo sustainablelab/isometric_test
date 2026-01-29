@@ -52,6 +52,9 @@
       was at a grid location before the first voxel in the map.
     * The fix: check if the player has been rendered yet. Only render the player once.
 LEFT OFF HERE
+[ ] Add timers to identify where the FPS bottleneck is
+[ ] Replace VoxelArtwork.render 'draw_index' with a simple check of the rounded grid coordinate
+[ ] Clean up mouse rendering so I can easily measure how long it takes
 [ ] * Add a 'z' value to tiles in tile_map.layout and voxels made from the tile_map
 [ ] Fix player's shadow now that there is no default floor at z=0
 [ ] Fix free movement and discrete movement for moving in two directions at the same time.
@@ -97,6 +100,8 @@ LEFT OFF HERE
 """
 
 import sys
+import time                                             # Profiling
+from statistics import fmean                            # Profiling
 import atexit
 from pathlib import Path
 from dataclasses import dataclass
@@ -515,6 +520,7 @@ class Player:
 
     def render(self, surf:pygame.Surface) -> None:
         """Display the player."""
+        self.game.timer_draw_player.start()
         if self.moving:
             # Wiggle more if moving
             self.wiggle = 0.5
@@ -600,6 +606,7 @@ class Player:
         # Draw player head
         ### circle(surface, color, center, radius, width=0, draw_top_right=None, draw_top_left=None, draw_bottom_left=None, draw_bottom_right=None) -> Rect
         pygame.draw.circle(surf, Color(0,0,0), center, 2*self.game.grid.scale)
+        self.game.timer_draw_player.stop()
 
     def render_romanized_chars(self, surf:pygame.Surface) -> None:
         """Render romanized chars above the player's head.
@@ -679,11 +686,11 @@ class TileMap:
 
         elif 0:
             ### Make floor tiles
-            layout[(0,0)] = {'z':3,'height':6, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
-            layout[(0,-1)] = {'z':0,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
-            layout[(0,-2)] = {'z':-3,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
-            layout[(0,-3)] = {'z':-6,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
-            layout[(0,-4)] = {'z':-9,'height':3, 'style':"style_shade_faces_solid_color", 'rand_amt':0}
+            layout[(0,0)] = {'z':3,  'percentage':1.0, 'height':6, 'style':"style_floor_tiles", 'rand_amt':0}
+            layout[(0,-1)] = {'z':0, 'percentage':1.0, 'height':3, 'style':"style_floor_tiles", 'rand_amt':0}
+            layout[(0,-2)] = {'z':-3,'percentage':1.0, 'height':3, 'style':"style_floor_tiles", 'rand_amt':0}
+            layout[(0,-3)] = {'z':-6,'percentage':1.0, 'height':3, 'style':"style_floor_tiles", 'rand_amt':0}
+            layout[(0,-4)] = {'z':-9,'percentage':1.0, 'height':3, 'style':"style_floor_tiles", 'rand_amt':0}
         else:
             ### Make walls
             # Outer walls
@@ -904,7 +911,13 @@ class VoxelArtwork:
         return adjusted_voxel_artwork
 
     def render(self, surf) -> None:
-        """Render voxels, player, and mouse."""
+        """Render voxels, player, and mouse.
+
+        TODO: why do I use a 'draw_index'? Why not just check if the rounded
+        grid coordinates match the current grid coordinate? And remember to
+        have checks in the beginning and at the end to catch if the player or
+        mouse is off-grid.
+        """
         voxels = self.adjust_voxel_size()
         player = self.game.player
         player_is_rendered = False
@@ -982,9 +995,10 @@ class VoxelArtwork:
                 style = voxels[G]['style']
                 match style:
                     case "style_floor_tiles":
-                        pygame.draw.polygon(surf, self.game.colors['color_voxel_top_floor'], voxel_Ts)
-                        pygame.draw.polygon(surf, self.game.colors['color_voxel_left_floor'], voxel_Ls)
-                        pygame.draw.polygon(surf, self.game.colors['color_voxel_right_floor'], voxel_Rs)
+                        if self.game.settings['setting_render_floor_tiles']:
+                            pygame.draw.polygon(surf, self.game.colors['color_voxel_top_floor'], voxel_Ts)
+                            pygame.draw.polygon(surf, self.game.colors['color_voxel_left_floor'], voxel_Ls)
+                            pygame.draw.polygon(surf, self.game.colors['color_voxel_right_floor'], voxel_Rs)
                     case "style_shade_faces_solid_color":
                         # Render the three visible quads
                         ### polygon(surface, color, points) -> Rect
@@ -1047,97 +1061,6 @@ class VoxelArtwork:
                 player.render(surf)
                 player_is_rendered = True
 
-    def old_render(self, surf) -> None:
-        """Render voxels and player.
-
-        Figure out which voxels the player is "in front" / "behind". Determine
-        correct draw order for the player in relation to the list of voxels.
-
-        Implementation
-        --------------
-        "In front" and "behind" is handled by draw order. I draw everything
-        and let draw order do the work for me. This is wasteful. But this is
-        just a prototype: as long as frame rate does not get in the way of
-        testing, I do not care how performant the code is.
-
-        "In front" and "behind" is simply determined by grid coordinate (x,y)
-        value. Consider player, p, and voxel, v. Visualize the grid as a
-        top-down view using conventional x,y axes: +x is right, +y is up.
-        Player p is in front of voxel v if px >= vx and py <= vy. Perform this
-        test to determine the player index in the list of voxels.
-
-        Iterate over all voxels and draw each one. When voxel index matches
-        player index, draw player. But only draw player once!
-        """
-        # TEMPORARY: Adjust size of voxels based on percentage that it fills its tile
-        # TODO: give each voxel its own percentage
-        voxels = self.adjust_voxel_size()
-
-        # Figure out when to draw player in list of voxels for correct draw order
-        player = self.game.player
-        player_voxel_index = 0                          # 0 : draw first
-        # TODO: iterate over this backwards and break after first hit
-        for i,voxel in enumerate(voxels):
-            grid_points = voxel[0]
-            lower_left = grid_points[0]                 # 0 : Lower left corner
-            if (player.pos[0] >= lower_left[0]) and (player.pos[1] <= lower_left[1]):
-                # Player is in front of this voxel; update draw order
-                player_voxel_index = i + 1
-
-        # DEBUG
-        ### DebugHud.add_text(debug_text:str)
-        if self.game.debug_hud:
-            self.game.debug_hud.add_text(
-                    f"player_voxel_index: i={player_voxel_index}, "
-                    f"player.pos: ({player.pos[0]:.1f},{player.pos[1]:.1f},z={player.z:.1f})")
-
-        # Convert each voxel to pixel coordinates and render
-        for i,voxel in enumerate(voxels):
-            # Draw player
-            if  i == player_voxel_index:
-                player.render(surf)
-            # Draw voxels
-            grid_points = voxel[0]
-            height = voxel[1]
-            style = voxel[2]
-            Gs = grid_points
-            # What is the index of the inner wall voxel at (10,3)?
-            if Gs[0] == (9.0,3.0):
-                # DEBUG
-                ### DebugHud.add_text(debug_text:str)
-                if self.game.debug_hud:
-                    self.game.debug_hud.add_text(
-                            f"inner wall voxel index: i={i}, "
-                            f"voxel grid_points: {grid_points}")
-            # Convert to pixel coordinates
-            Ps = [self.game.grid.xfm_gp(G) for G in grid_points]
-            # Describe the three visible surfaces of the voxel as quads
-            ### T: Top, L: Left, R: Right
-            voxel_Ts = [(P[0],P[1] - height*self.game.grid.scale) for P in Ps]
-            voxel_Ls = [Ps[0], Ps[1], voxel_Ts[1], voxel_Ts[0]]
-            voxel_Rs = [Ps[1], Ps[2], voxel_Ts[2], voxel_Ts[1]]
-            match style:
-                case "style_shade_faces_solid_color":
-                    # Render the three visible quads
-                    ### polygon(surface, color, points) -> Rect
-                    pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts)
-                    pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls)
-                    pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs)
-                    # DEBUG
-                    if Gs[0] == (9.0,3.0):
-                        pygame.draw.polygon(surf, Color(255,255,0), voxel_Ts)
-                case "style_skeleton_frame":
-                    ### polygon(surface, color, points, width=0) -> Rect
-                    pygame.draw.polygon(surf, self.game.colors['color_voxel_top'], voxel_Ts, width=1)
-                    pygame.draw.polygon(surf, self.game.colors['color_voxel_left'], voxel_Ls, width=1)
-                    pygame.draw.polygon(surf, self.game.colors['color_voxel_right'], voxel_Rs, width=1)
-                case _:
-                    pass
-        # If player is in front of all voxels, player has not been drawn yet!
-        if player_voxel_index == len(voxels):
-            # Draw the player now
-            player.render(surf)
-
 class Universe:
     """Recognize spells and then executes them."""
     pass
@@ -1193,6 +1116,60 @@ class RomanizedChars:
             self.letters[letter_tag['name']]=letter_tag['from']
         logger.debug(f"{self.letters}")
 
+class TimerFifo:
+    """Buffer readings of Timer.elapsed and report the mean.
+
+    >>> fifo = TimerFifo()
+    >>> fifo.update(5)
+    >>> fifo.mean
+    5.0
+    >>> fifo.update(6)
+    >>> fifo.mean
+    5.5
+    """
+    def __init__(self, size:int=10) -> None:
+        self.size = size
+        self.readings = [0]*self.size # Save buffered values in list 'readings'
+        self.num_readings = 0 # Track how many readings so far (max out at self.size)
+        self.data = None
+
+    def update(self, reading) -> None:
+        self.readings.pop()
+        self.readings.insert(0,reading)
+        self.num_readings = min(self.size, self.num_readings + 1)
+        self.data = self.readings[0:self.num_readings]
+
+    @property
+    def mean(self) -> float:
+        if self.data: return fmean(self.data)
+        else: return 0 # Fifo is not used (made a Timer, but never timed anything with it)
+
+class Timer:
+    def __init__(self, game) -> None:
+        self.game = game
+        self.time_start=0
+        self.time_stop=0
+        self.fifo = TimerFifo(size=10)
+
+    def start(self) -> None:
+        self.time_start = time.time()
+
+    def stop(self) -> None:
+        """Stop the timer and record elapsed time in the FIFO buffer."""
+        self.time_stop = time.time() # Stop timer
+        self.fifo.update(self.time_stop - self.time_start) # Record elapsed time
+
+    @property
+    def elapsed(self) -> int:
+        """Return the mean elapsed time."""
+        return self.fifo.mean
+
+    def debug_hud_report(self, name:str) -> None:
+        """Report timer in debug HUD."""
+        t = self.elapsed                                # Time
+        p = (t/self.game.timer_game_loop.elapsed)*100   # Percentage
+        self.game.debug_hud.add_text(f"{name:32}: {p:3.0f}% {t*1000:0.1f}ms")
+
 class Game:
     def __init__(self):
         pygame.init()                                   # Init pygame -- quit in shutdown
@@ -1225,6 +1202,16 @@ class Game:
         # FPS
         self.clock = pygame.time.Clock()
 
+        # Profiling
+        self.timer_game_loop = Timer(self)
+        self.timer_update_gravity_effects = Timer(self)
+        self.timer_draw_voxel_artowrk_and_player = Timer(self)
+        self.timer_draw_debug_grid = Timer(self)
+        self.timer_draw_player = Timer(self)
+        self.timer_player_update_voxel = Timer(self)
+        self.timer_update_mouse_height = Timer(self)
+        self.timer_blit_to_os_window = Timer(self)
+
     def run(self):
         while True: self.game_loop()
 
@@ -1235,10 +1222,13 @@ class Game:
             self.add_debug_text()
         else:
             self.debug_hud = None
+        self.timer_game_loop.start()
+        self.timer_update_gravity_effects.start()
 
 
         # Update things affected by gravity
         self.update_gravity_effects()
+        self.timer_update_gravity_effects.stop()
 
         # Handle keyboard and mouse
         # Zoom by scrolling the mouse wheel
@@ -1260,24 +1250,34 @@ class Game:
             self.debug_hud.add_text(f"dx%1: {rx%1}, dy%1: {ry}")
 
 
+        self.timer_draw_voxel_artowrk_and_player.start()
         # Clear screen
         ### fill(color, rect=None, special_flags=0) -> Rect
         self.surfs['surf_game_art'].fill(self.colors['color_game_art_bgnd'])
 
         # Draw the layout of voxels and player
         self.voxel_artwork.render(self.surfs['surf_game_art'])
+        self.timer_draw_voxel_artowrk_and_player.stop()
 
-        # Draw grid
-        if self.settings['setting_debug']:
-            self.grid.draw(self.surfs['surf_game_art'])
+        draw_debug_grid = False
+        if draw_debug_grid:
+            # Draw grid
+            self.timer_draw_debug_grid.start()
+            if self.settings['setting_debug']:
+                self.grid.draw(self.surfs['surf_game_art'])
+            self.timer_draw_debug_grid.stop()
 
         # Figure out which voxel is below the player
+        self.timer_player_update_voxel.start()
         self.player.update_voxel()
+        self.timer_player_update_voxel.stop()
 
         # self.render_mouse_location_as_white_circle()
         # Use the power of xfm_gp()
         # self.render_grid_tile_highlighted_at_mouse()
+        self.timer_update_mouse_height.start()
         self.update_mouse_height()
+        self.timer_update_mouse_height.stop()
 
         ### TEMPORARY: spell casting
         # Display typing text while casting
@@ -1299,9 +1299,11 @@ class Game:
         # self.surfs['surf_game_art'].blit(self.surfs['surf_alpha'], (0,0), special_flags=pygame.BLEND_ALPHA_SDL2)
         # self.surfs['surf_alpha'].fill(self.colors['color_clear'])
 
-        # Copy game art to OS window
+        # Copy game art to OS window: 8%
         ### blit(source, dest, area=None, special_flags=0) -> Rect
+        self.timer_blit_to_os_window.start()
         self.surfs['surf_os_window'].blit(self.surfs['surf_game_art'], (0,0))
+        self.timer_blit_to_os_window.stop()
 
 
         # Display Debug HUD overlay
@@ -1340,10 +1342,22 @@ class Game:
         # Draw to the OS window
         pygame.display.update()
 
+        self.timer_game_loop.stop()
+
         ### clock.tick(framerate=0) -> milliseconds
         self.clock.tick(60)
 
     def add_debug_text(self) -> None:
+        # Report total time (ms) elapsed in game loop
+        self.debug_hud.add_text(                            f"| Game loop: {self.timer_game_loop.elapsed*1000:0.1f}ms")
+        # Report percentage of total and time (ms) for parts of the game loop
+        self.timer_update_gravity_effects.debug_hud_report( "|  update_gravity_effects()")
+        self.timer_draw_voxel_artowrk_and_player.debug_hud_report("|  draw voxel artwork and player")
+        self.timer_draw_player.debug_hud_report(            "|    draw player")
+        self.timer_draw_debug_grid.debug_hud_report(        "|  draw debug grid")
+        self.timer_player_update_voxel.debug_hud_report(    "|  player.update_voxel")
+        self.timer_update_mouse_height.debug_hud_report(    "|  update_mouse_height")
+        self.timer_blit_to_os_window.debug_hud_report(      "|  blit_to_os_window")
         mpos_p = pygame.mouse.get_pos()                   # Mouse in pixel coord sys
         mpos_g = self.grid.xfm_pg(mpos_p)
         # Display mouse coordinates in game grid coordinate system
@@ -1374,6 +1388,7 @@ class Game:
         self.player.z += self.player.dz                 # velocity updates position
 
         # Stop falling if player is standing on something
+        # floor_height = 0 # Imaginary floor!
         floor_height = 1000*self.grid.scale # Earth ground
         if self.player.voxel != None:
             tile_height = self.player.voxel['height']
@@ -1633,6 +1648,8 @@ class Game:
                 self.settings['setting_show_help'] = not self.settings['setting_show_help']
             case pygame.K_F2:                           # F2 - Toggle Debug
                 self.settings['setting_debug'] = not self.settings['setting_debug']
+            case pygame.K_F3:                           # F2 - Toggle Debug
+                self.settings['setting_render_floor_tiles'] = not self.settings['setting_render_floor_tiles']
             # TEMPORARY adjust percentage that voxels cover tiles
             case pygame.K_UP:
                 self.voxel_artwork.percentage = min(1.0, self.voxel_artwork.percentage + 0.1)
